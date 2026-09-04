@@ -1,0 +1,6 @@
+{
+  "name": "Perception Arena",
+  "description": "Tactical zombie survival arena featuring a Military Command Bastion base, 100x100 boss arena realms with Elite Gatekeeper Guards, 7 upgradable squad soldiers, a gun repair workshop, upgradable assault tank, and boss powers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

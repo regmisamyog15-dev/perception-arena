@@ -1,0 +1,176 @@
+{
+  "caveman": {
+    "front": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    },
+    "back": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    },
+    "left": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    },
+    "right": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    }
+  },
+  "goblin": {
+    "front": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    },
+    "back": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    },
+    "left": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    },
+    "right": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    }
+  },
+  "viking": {
+    "front": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    },
+    "back": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    },
+    "left": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    },
+    "right": {
+      "idle": {
+        "frames": 6,
+        "size": 160
+      },
+      "walk": {
+        "frames": 8,
+        "size": 160
+      },
+      "attack": {
+        "frames": 6,
+        "size": 160
+      }
+    }
+  }
+}
