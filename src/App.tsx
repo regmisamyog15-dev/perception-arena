@@ -67,6 +67,7 @@ import {
   createSoldier,
   upgradeSoldier,
   updateSoldiersLogic,
+  imbueSoldierWithPower,
   SOLDIER_DEFINITIONS,
 } from './game/soldierLogic';
 import {
@@ -79,6 +80,9 @@ import {
 import { MusicPlayerBar } from './components/MusicPlayerBar';
 import { ShopModal } from './components/ShopModal';
 import { GameHUD } from './components/GameHUD';
+
+const SAVE_KEY = 'perception_arena_save';
+const MAX_DEATHS = 3; // player gets 3 free respawns at base; the 4th death is a full game over + save wipe
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -100,6 +104,76 @@ export default function App() {
       return 0;
     }
   });
+
+  // Whether a resumable save exists (progress kept as long as the player has died 3 times or fewer)
+  const [hasSavedGame, setHasSavedGame] = useState(() => {
+    try {
+      return !!localStorage.getItem(SAVE_KEY);
+    } catch {
+      return false;
+    }
+  });
+
+  // Persist current run progress (wave/atoms/base/tank/soldiers/superpowers/doors) to the browser.
+  const saveProgress = useCallback(() => {
+    try {
+      const eng = engineRef.current;
+      const data = {
+        v: 1,
+        deaths: eng.deaths,
+        wave: eng.wave,
+        kills: eng.kills,
+        atoms: eng.atoms,
+        baseLevel: eng.base.level,
+        tank: {
+          owned: eng.tank.owned,
+          armorLevel: eng.tank.armorLevel,
+          cannonLevel: eng.tank.cannonLevel,
+          speedLevel: eng.tank.speedLevel,
+          nanitesLevel: eng.tank.nanitesLevel,
+        },
+        soldiers: eng.soldiers.map((s) => ({
+          type: s.type,
+          level: s.level,
+          isLegendaryHero: s.isLegendaryHero,
+          assignedPowerId: s.assignedPowerId,
+          assignedPowerName: s.assignedPowerName,
+          assignedPowerColor: s.assignedPowerColor,
+          assignedPowerIcon: s.assignedPowerIcon,
+        })),
+        superpowers: Object.fromEntries(
+          Object.entries(eng.superpowers).map(([id, sp]) => [id, { unlocked: (sp as Superpower).unlocked, equipped: (sp as Superpower).equipped }])
+        ),
+        player: {
+          armorLevel: eng.player.armorLevel,
+          upgrades: { ...eng.player.upgrades },
+          grenades: eng.player.grenades,
+          medkits: eng.player.medkits,
+          serums: eng.player.serums,
+        },
+        doors: eng.doors.map((d) => ({
+          index: d.index,
+          unlocked: d.unlocked,
+          cleared: d.cleared,
+          eliteSpawned: d.eliteSpawned,
+          eliteDefeated: d.eliteDefeated,
+        })),
+      };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+      setHasSavedGame(true);
+    } catch {
+      // silent — saving is best-effort
+    }
+  }, []);
+
+  const clearSavedProgress = useCallback(() => {
+    try {
+      localStorage.removeItem(SAVE_KEY);
+    } catch {
+      // silent
+    }
+    setHasSavedGame(false);
+  }, []);
 
   // Reactive state for HUD
   const [hudState, setHudState] = useState({
@@ -147,6 +221,7 @@ export default function App() {
     wave: 1,
     kills: 0,
     atoms: 0,
+    deaths: 0,
     vignetteTimer: 0,
     alertText: '',
     alertTimer: 0,
@@ -635,11 +710,30 @@ export default function App() {
 
     if (player.hp <= 0) {
       player.hp = 0;
+      const eng = engineRef.current;
+      eng.deaths = (eng.deaths || 0) + 1;
+
+      // 3-respawn system: first 3 deaths teleport you back to base instead of ending the run
+      if (eng.deaths <= MAX_DEATHS) {
+        const remaining = MAX_DEATHS - eng.deaths;
+        player.hp = player.hpMax;
+        player.x = eng.base.x;
+        player.y = eng.base.y;
+        player.dashLockedUntil = performance.now() + 2000; // brief invulnerability after respawn
+        showAlert(`💀 YOU DIED — Respawned at Base (${remaining} respawn${remaining === 1 ? '' : 's'} left)`);
+        spawnFloatingText(player.x, player.y - 80, `RESPAWN ${eng.deaths}/${MAX_DEATHS}`, '#ff4d5e', 22);
+        addScreenShake(15);
+        saveProgress();
+        return;
+      }
+
+      // 4th death: real game over, and the save is wiped so the next run starts clean
       setGameState('gameover');
       stopBgmMusic();
       setIsMusicPlaying(false);
+      clearSavedProgress();
       setHighScore((prev) => {
-        const next = Math.max(prev, engineRef.current.wave);
+        const next = Math.max(prev, eng.wave);
         try {
           localStorage.setItem('perception_arena_highscore', next.toString());
         } catch {
@@ -648,7 +742,7 @@ export default function App() {
         return next;
       });
     }
-  }, [flashVignette, spawnFloatingText, addScreenShake]);
+  }, [flashVignette, spawnFloatingText, addScreenShake, showAlert, saveProgress, clearSavedProgress]);
 
   const handleToggleEquipSkill = useCallback((id: string) => {
     const res = toggleEquipPowerStand(engineRef.current.superpowers, id);
@@ -2157,7 +2251,20 @@ export default function App() {
     handleUpgradeTank,
   ]);
 
+  // Autosave progress every 15s while playing, and once more when the tab/window closes.
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+    const interval = window.setInterval(() => saveProgress(), 15000);
+    const onUnload = () => saveProgress();
+    window.addEventListener('beforeunload', onUnload);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('beforeunload', onUnload);
+    };
+  }, [gameState, saveProgress]);
+
   const startGame = () => {
+    clearSavedProgress();
     initDoorsAndWorld();
     engineRef.current.lastTime = performance.now();
     engineRef.current.airdropTimer = 180000;
@@ -2165,12 +2272,115 @@ export default function App() {
     engineRef.current.eliteGuards = [];
     engineRef.current.currentArenaId = null;
     engineRef.current.currentGateLevel = 1;
+    engineRef.current.deaths = 0;
+    setGameState('playing');
+    startBgmMusic();
+    setIsMusicPlaying(true);
+  };
+
+  // Resume a saved run: rebuild the world, then overlay saved progress (base/tank/soldiers/atoms/wave/doors).
+  const continueGame = () => {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(SAVE_KEY);
+    } catch {
+      raw = null;
+    }
+    if (!raw) {
+      startGame();
+      return;
+    }
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      startGame();
+      return;
+    }
+
+    initDoorsAndWorld();
+    const eng = engineRef.current;
+    eng.lastTime = performance.now();
+    eng.airdropTimer = 180000;
+    eng.bossTimer = 150000;
+    eng.eliteGuards = [];
+    eng.currentArenaId = null;
+    eng.currentGateLevel = 1;
+
+    eng.deaths = data.deaths || 0;
+    eng.wave = data.wave || 1;
+    eng.kills = data.kills || 0;
+    eng.atoms = data.atoms || 0;
+
+    eng.base = createInitialBase();
+    const targetLevel = data.baseLevel || 1;
+    while (eng.base.level < targetLevel) {
+      if (!upgradeBase(eng.base)) break;
+    }
+
+    if (data.tank) {
+      eng.tank.owned = !!data.tank.owned;
+      eng.tank.armorLevel = data.tank.armorLevel || 0;
+      eng.tank.cannonLevel = data.tank.cannonLevel || 0;
+      eng.tank.speedLevel = data.tank.speedLevel || 0;
+      eng.tank.nanitesLevel = data.tank.nanitesLevel || 0;
+      eng.tank.hp = eng.tank.hpMax;
+    }
+
+    eng.soldiers = Array.isArray(data.soldiers)
+      ? data.soldiers.map((sd: any) => {
+          const s = createSoldier(sd.type as SoldierType, eng.base.x, eng.base.y);
+          for (let i = 1; i < (sd.level || 1); i++) upgradeSoldier(s);
+          if (sd.isLegendaryHero && sd.assignedPowerId) {
+            imbueSoldierWithPower(s, sd.assignedPowerId, sd.assignedPowerName, sd.assignedPowerColor, sd.assignedPowerIcon);
+          }
+          return s;
+        })
+      : [];
+
+    eng.superpowers = createInitialSuperpowers();
+    if (data.superpowers) {
+      Object.entries(data.superpowers as Record<string, { unlocked: boolean; equipped: boolean }>).forEach(
+        ([id, sp]) => {
+          if (eng.superpowers[id]) {
+            eng.superpowers[id].unlocked = !!sp.unlocked;
+            eng.superpowers[id].equipped = !!sp.equipped;
+          }
+        }
+      );
+    }
+
+    if (data.player) {
+      eng.player.armorLevel = data.player.armorLevel || 0;
+      eng.player.upgrades = { ...eng.player.upgrades, ...data.player.upgrades };
+      eng.player.grenades = data.player.grenades ?? eng.player.grenades;
+      eng.player.medkits = data.player.medkits ?? eng.player.medkits;
+      eng.player.serums = data.player.serums ?? eng.player.serums;
+    }
+    eng.player.hp = eng.player.hpMax;
+    eng.player.x = eng.base.x;
+    eng.player.y = eng.base.y;
+
+    if (Array.isArray(data.doors)) {
+      data.doors.forEach((sd: any) => {
+        const d = eng.doors.find((x) => x.index === sd.index);
+        if (d) {
+          d.unlocked = !!sd.unlocked;
+          d.cleared = !!sd.cleared;
+          d.eliteSpawned = !!sd.eliteSpawned;
+          d.eliteDefeated = !!sd.eliteDefeated;
+        }
+      });
+    }
+
     setGameState('playing');
     startBgmMusic();
     setIsMusicPlaying(true);
   };
 
   const restartGame = () => {
+    clearSavedProgress();
+    engineRef.current.deaths = 0;
     engineRef.current.player = {
       x: WORLD_W / 2,
       y: WORLD_H / 2,
@@ -2356,9 +2566,21 @@ export default function App() {
               High Score (Best Wave): <span className="font-bold text-white">{highScore}</span>
             </p>
           </div>
-          <button onClick={startGame} className="btn-arcade mt-5">
-            ENTER SANCTUARY & START COMBAT
-          </button>
+          <div className="flex gap-3 mt-5">
+            {hasSavedGame && (
+              <button onClick={continueGame} className="btn-arcade">
+                ▶ CONTINUE SAVED RUN
+              </button>
+            )}
+            <button onClick={startGame} className="btn-arcade">
+              {hasSavedGame ? 'START NEW GAME' : 'ENTER SANCTUARY & START COMBAT'}
+            </button>
+          </div>
+          {hasSavedGame && (
+            <p className="text-center text-[#83d3e1] text-[11px] mt-2 opacity-80">
+              Starting a new game erases your saved progress.
+            </p>
+          )}
         </div>
       )}
 
@@ -2366,11 +2588,14 @@ export default function App() {
       {gameState === 'gameover' && (
         <div className="screen-overlay">
           <h1 className="font-display text-6xl md:text-8xl font-black text-[#ff4d5e] neon-text-red mb-2">YOU DIED</h1>
-          <h2 className="text-xl md:text-2xl text-[#ffcf5c] mb-6 font-bold">
+          <h2 className="text-xl md:text-2xl text-[#ffcf5c] mb-2 font-bold">
             Wave Reached: {engineRef.current.wave} &nbsp;|&nbsp; Kills: {engineRef.current.kills} &nbsp;|&nbsp; Atoms: {engineRef.current.atoms}
           </h2>
+          <p className="text-sm text-[#ff4d5e] mb-6 font-bold">
+            Used all {MAX_DEATHS} respawns — saved progress has been cleared.
+          </p>
           <button onClick={restartGame} className="btn-arcade">
-            RESPAWN AT BASE
+            START FRESH RUN
           </button>
         </div>
       )}
