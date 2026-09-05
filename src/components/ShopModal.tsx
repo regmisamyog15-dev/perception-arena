@@ -74,7 +74,7 @@ export const ShopModal: React.FC<Props> = ({
         </div>
 
         {/* Category Tabs */}
-        <div className="flex gap-2 mb-4 border-b border-gray-800 pb-2 overflow-x-auto">
+        <div className="flex flex-wrap gap-2 mb-4 border-b border-gray-800 pb-2">
           {[
             { id: 'repair', label: '🔧 Gun Repair & Rebuild Box', badge: 'WORKBENCH' },
             { id: 'soldiers', label: '👥 Squad Barracks', badge: `${soldiers.length}/${base.maxSoldiers}` },
