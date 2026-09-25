@@ -327,20 +327,6 @@ export function renderGameScene(
     ctx.fillText('GUN WORKBENCH', -rad + 87, 0);
     ctx.fillText('PRESS [B] SHOP', -rad + 87, 14);
 
-    // 4. Tank Deployment Bay (Right side of Base)
-    ctx.fillStyle = '#27272a';
-    ctx.fillRect(rad - 125, -35, 75, 70);
-    ctx.strokeStyle = '#22c55e';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(rad - 125, -35, 75, 70);
-    ctx.fillStyle = '#22c55e';
-    ctx.font = 'bold 9px "JetBrains Mono"';
-    ctx.fillText('🚜 TANK BAY', rad - 87, -18);
-    ctx.fillStyle = '#a1a1aa';
-    ctx.font = '8px "JetBrains Mono"';
-    ctx.fillText('ASSAULT GARAGE', rad - 87, 0);
-    ctx.fillText(tank.owned ? 'TANK READY [F]' : 'BUY IN SHOP', rad - 87, 14);
-
     // 4.5 Floating Flexing Power Stand (South area of Base)
     const standTime = performance.now() * 0.002;
     const standFloatY = Math.sin(standTime) * 6;

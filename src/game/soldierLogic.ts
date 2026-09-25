@@ -25,7 +25,7 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
     type: 'rifleman',
     name: 'Jack "Trigger"',
     title: 'Assault Marksman',
-    weaponName: 'M4A1 Pulse Rifle',
+    weaponName: 'AK-47',
     icon: '🎖️',
     color: '#4cc9f0',
     hasSuperpower: false,
@@ -34,7 +34,7 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
     baseSpeed: 5.4,
     baseRange: 500,
     baseFireRate: 200,
-    cost: 75,
+    cost: 1000, // rented, not owned — see RIFLEMAN_RENTAL_MS
     upgradeCosts: [110, 220],
   },
   shotgunner: {
@@ -141,6 +141,10 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
   },
 };
 
+// Jack is rented, not owned outright: 1000 ⚛ buys 2.5 minutes of activation,
+// then he's auto-removed from the squad and must be re-bought.
+export const RIFLEMAN_RENTAL_MS = 2.5 * 60 * 1000;
+
 export function createSoldier(type: SoldierType, spawnX: number, spawnY: number): Soldier {
   const def = SOLDIER_DEFINITIONS[type];
   return {
@@ -174,6 +178,7 @@ export function createSoldier(type: SoldierType, spawnX: number, spawnY: number)
     cost: def.cost,
     upgradeCosts: def.upgradeCosts,
     isLegendaryHero: false,
+    rentalExpiresAt: type === 'rifleman' ? performance.now() + RIFLEMAN_RENTAL_MS : undefined,
   };
 }
 
@@ -234,7 +239,7 @@ export function updateSoldiersLogic(
   dt: number,
   time: number,
   damageEntity: (ent: Zombie | Boss, rawDmg: number) => void,
-  explode: (x: number, y: number, radius: number, dmg: number) => void,
+  explode: (x: number, y: number, radius: number, dmg: number, hitsBoss?: boolean) => void,
   spawnFloatingText: (x: number, y: number, text: string, color?: string, size?: number) => void,
   createParticles: (x: number, y: number, color: string, count: number, speedMax: number, lifeMax?: number) => void
 ) {
@@ -242,6 +247,15 @@ export function updateSoldiersLogic(
 
   for (let sIdx = 0; sIdx < soldiers.length; sIdx++) {
     const s = soldiers[sIdx];
+
+    // Timed rental activation (Jack) — expires and leaves the squad automatically
+    if (s.rentalExpiresAt && time >= s.rentalExpiresAt) {
+      spawnFloatingText(s.x, s.y - 30, `⏱️ ${s.name}'S CONTRACT EXPIRED — REBUY TO REDEPLOY`, '#ffcf5c', 16);
+      createParticles(s.x, s.y, '#ffcf5c', 20, 4, 300);
+      soldiers.splice(sIdx, 1);
+      sIdx--;
+      continue;
+    }
 
     // Handle Respawn if knocked down
     if (s.isDead) {
@@ -288,26 +302,17 @@ export function updateSoldiersLogic(
       s.y += Math.sin(moveAng) * moveSpeed;
     }
 
-    // Acquire Target (Boss has high priority, otherwise closest Zombie within range)
+    // Acquire Target — zombies only. Soldiers never engage bosses, in the
+    // homeland or in the arena; they're backup for the horde, not boss DPS.
     let target: Zombie | Boss | null = null;
     let targetDist = s.range;
 
-    if (boss && boss.state !== 'entering') {
-      const dBoss = Math.hypot(boss.x - s.x, boss.y - s.y);
-      if (dBoss <= s.range * 1.2) {
-        target = boss;
-        targetDist = dBoss;
-      }
-    }
-
-    if (!target) {
-      for (const z of zombies) {
-        if (z.dead) continue;
-        const d = Math.hypot(z.x - s.x, z.y - s.y);
-        if (d < targetDist) {
-          target = z;
-          targetDist = d;
-        }
+    for (const z of zombies) {
+      if (z.dead) continue;
+      const d = Math.hypot(z.x - s.x, z.y - s.y);
+      if (d < targetDist) {
+        target = z;
+        targetDist = d;
       }
     }
 
@@ -323,7 +328,7 @@ export function updateSoldiersLogic(
           if (s.assignedPowerId === 'orbital_beam') {
             spawnFloatingText(s.x, s.y - 45, '☀️ SOLAR DEATH RAY!', '#ffd166', 20);
             createParticles(target.x, target.y, '#ffd166', 35, 8, 500);
-            explode(target.x, target.y, 220, s.dmg * 4.5);
+            explode(target.x, target.y, 220, s.dmg * 4.5, false);
           } else if (s.assignedPowerId === 'chronoshift') {
             spawnFloatingText(s.x, s.y - 45, '❄️ CHRONO GLACIAL STASIS!', '#00f5d4', 20);
             createParticles(s.x, s.y, '#a0f0ff', 40, 9, 500);
@@ -340,7 +345,7 @@ export function updateSoldiersLogic(
           } else if (s.assignedPowerId === 'earth_shatter') {
             spawnFloatingText(s.x, s.y - 45, '🌋 TECTONIC SEISMIC SLAM!', '#f77f00', 20);
             createParticles(s.x, s.y, '#f77f00', 45, 10, 600);
-            explode(s.x, s.y, 350, s.dmg * 3.8);
+            explode(s.x, s.y, 350, s.dmg * 3.8, false);
           } else if (s.assignedPowerId === 'divine_aegis') {
             spawnFloatingText(s.x, s.y - 45, '🛡️ CELESTIAL DIVINE AEGIS!', '#ffd166', 20);
             createParticles(s.x, s.y, '#ffd166', 50, 10, 600);
@@ -359,7 +364,7 @@ export function updateSoldiersLogic(
             const tx = target.x + (Math.random() - 0.5) * 160;
             const ty = target.y + (Math.random() - 0.5) * 160;
             setTimeout(() => {
-              explode(tx, ty, s.level === 3 ? 240 : 180, s.dmg * 4);
+              explode(tx, ty, s.level === 3 ? 240 : 180, s.dmg * 4, false);
               createParticles(tx, ty, '#ff4d00', 40, 8, 600);
             }, m * 220);
           }
@@ -389,7 +394,6 @@ export function updateSoldiersLogic(
           let lastChainY = s.y;
 
           const eligible = [...zombies];
-          if (boss && boss.state !== 'entering') eligible.unshift(boss as any);
 
           for (const ent of eligible) {
             if (currentChain >= chainMax) break;
@@ -424,6 +428,7 @@ export function updateSoldiersLogic(
               dmg: s.dmg,
               cls: 'bullet',
               life: 500,
+              noBossDamage: true,
             });
           }
         } else if (s.type === 'demolitionist') {
@@ -437,6 +442,7 @@ export function updateSoldiersLogic(
             cls: 'rocket',
             splash: s.level === 3 ? 240 : 180,
             life: 1200,
+            noBossDamage: true,
           });
         } else if (s.type === 'sniper') {
           bullets.push({
@@ -448,6 +454,7 @@ export function updateSoldiersLogic(
             dmg: s.dmg,
             cls: 'bullet',
             life: 1400,
+            noBossDamage: true,
           });
         } else {
           // Standard / Legendary infused basic shots
@@ -460,6 +467,7 @@ export function updateSoldiersLogic(
             dmg: s.dmg,
             cls: 'bullet',
             life: 900,
+            noBossDamage: true,
           });
         }
 

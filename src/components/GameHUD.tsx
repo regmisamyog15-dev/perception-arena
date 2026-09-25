@@ -32,6 +32,7 @@ interface Props {
     towerHpMax?: number;
     inCover: boolean;
     inBaseSafeZone: boolean;
+    groundSlamLastUsed: number;
   };
   player: PlayerState;
   superpowers: Record<string, Superpower>;
@@ -43,6 +44,7 @@ interface Props {
   onThrowGrenade: () => void;
   onUseConsumable: () => void;
   onActivateSuperpower: (id: string) => void;
+  onPerformGroundSlam: () => void;
 }
 
 export const GameHUD: React.FC<Props> = ({
@@ -57,6 +59,7 @@ export const GameHUD: React.FC<Props> = ({
   onThrowGrenade,
   onUseConsumable,
   onActivateSuperpower,
+  onPerformGroundSlam,
 }) => {
   const now = performance.now();
 
@@ -284,6 +287,45 @@ export const GameHUD: React.FC<Props> = ({
               </button>
             );
           })}
+          {/* Ground Slam / Smash — always available, no unlock needed */}
+          {(() => {
+            const cd = 6000;
+            const timeSince = now - (hudState.groundSlamLastUsed || 0);
+            const onCd = timeSince < cd;
+            const cdPct = onCd ? 1 - timeSince / cd : 0;
+            const cdSec = Math.ceil((cd - timeSince) / 1000);
+            return (
+              <button
+                onClick={onPerformGroundSlam}
+                disabled={onCd}
+                className={`relative px-3 py-2 rounded-xl flex items-center gap-2 border transition-all cursor-pointer overflow-hidden ${
+                  onCd
+                    ? 'bg-black/40 border-white/5 opacity-60 cursor-not-allowed'
+                    : 'bg-[#0a0a0d]/90 border-[#ff8c00]/60 hover:border-[#ff8c00] hover:scale-102'
+                }`}
+              >
+                {onCd && (
+                  <div className="absolute inset-0 bg-black/75 z-10 flex items-center justify-center text-xs font-mono font-bold text-white">
+                    {cdSec}s
+                  </div>
+                )}
+                {onCd && (
+                  <div
+                    className="absolute bottom-0 left-0 h-1 bg-[#ff4d5e] z-20"
+                    style={{ width: `${cdPct * 100}%` }}
+                  />
+                )}
+                <span className="text-xl">👊</span>
+                <div className="text-left">
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-bold text-white">Ground Slam</span>
+                    <span className="px-1 py-0.2 bg-white/20 rounded text-[9px] font-mono text-[#ff8c00]">[C]</span>
+                  </div>
+                  <div className="text-[10px] text-gray-400">{onCd ? 'RECHARGING' : 'READY'}</div>
+                </div>
+              </button>
+            );
+          })()}
           {(Object.values(superpowers) as Superpower[])
             .filter((sp) => sp.unlocked && sp.equipped && sp.category === 'passive')
             .map((sp) => (

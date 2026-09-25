@@ -46,8 +46,6 @@ import {
   playUpgradeSound,
   startBgmMusic,
   stopBgmMusic,
-  toggleBgmMusic,
-  setBgmTrack,
   unlockAudio,
 } from './audio/sound';
 import { generateWorldStructures } from './game/structures';
@@ -77,7 +75,6 @@ import {
   updateSuperpowersActive,
   toggleEquipPowerStand,
 } from './game/superpowerLogic';
-import { MusicPlayerBar } from './components/MusicPlayerBar';
 import { ShopModal } from './components/ShopModal';
 import { GameHUD } from './components/GameHUD';
 
@@ -95,8 +92,6 @@ export default function App() {
   // React State for UI & Modals
   const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover'>('start');
   const [shopOpen, setShopOpen] = useState(false);
-  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [highScore, setHighScore] = useState(() => {
     try {
       return parseInt(localStorage.getItem('perception_arena_highscore') || '0', 10);
@@ -206,6 +201,7 @@ export default function App() {
     towerHpMax: 1000,
     inCover: false,
     inBaseSafeZone: false,
+    groundSlamLastUsed: 0,
   });
 
   // Engine persistent refs
@@ -298,6 +294,7 @@ export default function App() {
     lastTime: 0,
     beaconEjectTimer: 0,       // ms player has been standing on arena center beacon
     beaconEjectWarned: false,  // whether we've shown the 3s warning
+    nearPortalWarned: false,   // whether the "Press R to return" popup has fired for this visit
   });
 
   const initDoorsAndWorld = useCallback(() => {
@@ -515,7 +512,9 @@ export default function App() {
       } else {
         engineRef.current.kills++;
         const z = ent as Zombie;
-        addAtoms(z.type === 'ztank' ? 8 : z.type === 'rpgz' || z.type === 'gunner' ? 4 : z.type === 'runner' ? 3 : 2);
+        // Zombie kill atom drop — cut to a quarter of the original reward
+        const baseAtomDrop = z.type === 'ztank' ? 8 : z.type === 'rpgz' || z.type === 'gunner' ? 4 : z.type === 'runner' ? 3 : 2;
+        addAtoms(Math.max(1, Math.round(baseAtomDrop * 0.25)));
 
         // Ground blood splatter decal on death
         engineRef.current.decals.push({
@@ -538,7 +537,7 @@ export default function App() {
     }
   }, [addAtoms, createParticles, spawnFloatingText]);
 
-  const explode = useCallback((x: number, y: number, radius: number, dmg: number) => {
+  const explode = useCallback((x: number, y: number, radius: number, dmg: number, hitsBoss: boolean = true) => {
     engineRef.current.screenShake = Math.max(engineRef.current.screenShake, 20);
     playExplosionSound();
     createParticles(x, y, '#ff8c00', 50, 12, 600);
@@ -554,7 +553,7 @@ export default function App() {
     });
 
     const targets: (Zombie | Boss)[] = [...engineRef.current.zombies];
-    if (engineRef.current.boss && engineRef.current.boss.state !== 'entering') {
+    if (hitsBoss && engineRef.current.boss && engineRef.current.boss.state !== 'entering') {
       targets.push(engineRef.current.boss);
     }
 
@@ -730,7 +729,6 @@ export default function App() {
       // 4th death: real game over, and the save is wiped so the next run starts clean
       setGameState('gameover');
       stopBgmMusic();
-      setIsMusicPlaying(false);
       clearSavedProgress();
       setHighScore((prev) => {
         const next = Math.max(prev, eng.wave);
@@ -1332,6 +1330,12 @@ export default function App() {
     const player = engineRef.current.player;
     const tank = engineRef.current.tank;
 
+    // Tank feature removed — never allow a purchase to go through
+    if (type === 'tank' || type === 'tank_upgrade') {
+      spawnFloatingText(player.x, player.y - 40, 'Tank support has been decommissioned', '#ff4d5e');
+      return;
+    }
+
     if (atoms < cost) return;
     engineRef.current.atoms -= cost;
     playUpgradeSound();
@@ -1615,10 +1619,25 @@ export default function App() {
               tank.x = player.x;
               tank.y = player.y;
             }
+
+            // Exit portal proximity popup — fires every time you step onto it
+            const portalDist = Math.hypot(
+              player.x - currentDoor.arenaX,
+              player.y - (currentDoor.arenaY + currentDoor.arenaH / 2 - 120)
+            );
+            if (portalDist < 120) {
+              if (!eng.nearPortalWarned) {
+                eng.nearPortalWarned = true;
+                showAlert('🌀 PRESS R TO RETURN TO OVERWORLD');
+              }
+            } else {
+              eng.nearPortalWarned = false;
+            }
           }
         } else {
           player.x = Math.max(player.r, Math.min(WORLD_W - player.r, player.x));
           player.y = Math.max(player.r, Math.min(WORLD_H - player.r, player.y));
+          eng.nearPortalWarned = false;
         }
 
         // -------------------------------------------------------
@@ -1998,7 +2017,7 @@ export default function App() {
           // Player / Turret / Soldier Bullet hitting Boss or Zombies or Elite Guards
           if (b.cls !== 'zombiebullet' && b.cls !== 'zfireball' && b.cls !== 'elitebullet') {
             let hit = false;
-            if (eng.boss && eng.boss.state !== 'entering') {
+            if (!b.noBossDamage && eng.boss && eng.boss.state !== 'entering') {
               const dBoss = distToSegment(eng.boss.x, eng.boss.y, prevX, prevY, b.x, b.y);
               if (dBoss < eng.boss.r + 8) {
                 if (b.splash) {
@@ -2046,7 +2065,7 @@ export default function App() {
                 const dZ = distToSegment(z.x, z.y, prevX, prevY, b.x, b.y);
                 if (dZ < z.r + 8) {
                   if (b.splash) {
-                    explode(b.x, b.y, b.splash, b.dmg);
+                    explode(b.x, b.y, b.splash, b.dmg, !b.noBossDamage);
                   } else {
                     damageEntity(z, b.dmg);
                   }
@@ -2162,6 +2181,7 @@ export default function App() {
           towerHpMax: activeTower ? activeTower.hpMax : 1000,
           inCover: !!player.inCoverId,
           inBaseSafeZone: inBase,
+          groundSlamLastUsed: (player as any).groundSlamLastUsed || 0,
         });
       }
 
@@ -2275,7 +2295,6 @@ export default function App() {
     engineRef.current.deaths = 0;
     setGameState('playing');
     startBgmMusic();
-    setIsMusicPlaying(true);
   };
 
   // Resume a saved run: rebuild the world, then overlay saved progress (base/tank/soldiers/atoms/wave/doors).
@@ -2375,7 +2394,6 @@ export default function App() {
 
     setGameState('playing');
     startBgmMusic();
-    setIsMusicPlaying(true);
   };
 
   const restartGame = () => {
@@ -2451,7 +2469,6 @@ export default function App() {
     initDoorsAndWorld();
     setGameState('playing');
     startBgmMusic();
-    setIsMusicPlaying(true);
   };
 
   return (
@@ -2459,36 +2476,6 @@ export default function App() {
       <canvas id="gameCanvas" ref={canvasRef} className="absolute inset-0 z-[1] w-full h-full" />
       <div className="scanlines" />
       <div id="vignette" className={engineRef.current.vignetteTimer > 0 ? 'show' : ''} />
-
-      {/* Music Player Bar (Top Center) */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-        <MusicPlayerBar
-          currentTrackIndex={currentTrackIndex}
-          isPlaying={isMusicPlaying}
-          onSelectTrack={(idx) => {
-            setCurrentTrackIndex(idx);
-            setBgmTrack(idx);
-            if (!isMusicPlaying) {
-              startBgmMusic();
-              setIsMusicPlaying(true);
-            }
-          }}
-          onTogglePlay={() => {
-            const playing = toggleBgmMusic();
-            setIsMusicPlaying(playing);
-          }}
-          onNextTrack={() => {
-            const nextIdx = (currentTrackIndex + 1) % 6;
-            setCurrentTrackIndex(nextIdx);
-            setBgmTrack(nextIdx);
-          }}
-          onPrevTrack={() => {
-            const prevIdx = (currentTrackIndex - 1 + 6) % 6;
-            setCurrentTrackIndex(prevIdx);
-            setBgmTrack(prevIdx);
-          }}
-        />
-      </div>
 
       {/* Alert Banner */}
       <div
@@ -2532,6 +2519,7 @@ export default function App() {
           onThrowGrenade={throwGrenade}
           onUseConsumable={useConsumable}
           onActivateSuperpower={handleTriggerSuperpower}
+          onPerformGroundSlam={performGroundSlam}
         />
       )}
 

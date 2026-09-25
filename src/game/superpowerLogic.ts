@@ -191,16 +191,7 @@ export function unlockNextSuperpower(
   playerX: number,
   playerY: number
 ): string | null {
-  const order = [
-    'orbital_beam',
-    'chronoshift',
-    'earth_shatter',
-    'divine_aegis',
-    'iron_skin',
-    'vampiric_strikes',
-    'berserker_instinct',
-    'second_wind',
-  ];
+  const order = ['orbital_beam'];
 
   for (const id of order) {
     const sp = superpowers[id];

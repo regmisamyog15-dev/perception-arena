@@ -15,6 +15,9 @@ export interface BaseLevelDef {
   beaconColor: string;
 }
 
+// Hard squad cap — Jack (rifleman) + one other soldier, no more.
+export const MAX_SQUAD_SIZE = 2;
+
 export const BASE_LEVELS: Record<number, BaseLevelDef> = {
   1: {
     level: 1,
@@ -84,7 +87,7 @@ export function createInitialBase(): BaseState {
     hpMax: def.hpMax,
     safeRadius: def.safeRadius,
     spawnBlockRadius: def.spawnBlockRadius,
-    maxSoldiers: def.maxSoldiers,
+    maxSoldiers: Math.min(def.maxSoldiers, MAX_SQUAD_SIZE),
     healingRate: def.healingRate,
     turrets: def.turrets,
     beaconColor: def.beaconColor,
@@ -115,7 +118,7 @@ export function upgradeBase(base: BaseState): boolean {
   base.hp = def.hpMax;
   base.safeRadius = def.safeRadius;
   base.spawnBlockRadius = def.spawnBlockRadius;
-  base.maxSoldiers = def.maxSoldiers;
+  base.maxSoldiers = Math.min(def.maxSoldiers, MAX_SQUAD_SIZE);
   base.healingRate = def.healingRate;
   base.turrets = def.turrets;
   base.beaconColor = def.beaconColor;

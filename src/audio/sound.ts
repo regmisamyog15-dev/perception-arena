@@ -679,16 +679,8 @@ function scheduler() {
 }
 
 export function startBgmMusic() {
-  const ctx = getAudioCtx();
-  if (ctx.state === 'suspended') {
-    ctx.resume();
-  }
-
-  if (bgmPlaying) return;
-  bgmPlaying = true;
-  currentStep = 0;
-  nextNoteTime = ctx.currentTime + 0.05;
-  scheduler();
+  // Game music has been removed — intentional no-op.
+  return;
 }
 
 export function stopBgmMusic() {

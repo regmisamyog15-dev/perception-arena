@@ -78,9 +78,8 @@ export const ShopModal: React.FC<Props> = ({
           {[
             { id: 'repair', label: '🔧 Gun Repair & Rebuild Box', badge: 'WORKBENCH' },
             { id: 'soldiers', label: '👥 Squad Barracks', badge: `${soldiers.length}/${base.maxSoldiers}` },
-            { id: 'tank', label: '🚜 Assault Tank Bay', badge: tank.owned ? `Lv${tank.armorLevel || 1}` : 'BUY' },
             { id: 'base', label: '🏰 Base Bastion', badge: `Lv${base.level}` },
-            { id: 'superpowers', label: '⚡ Skills', badge: `${(Object.values(superpowers) as Superpower[]).filter(s => s.unlocked).length}/8` },
+            { id: 'superpowers', label: '⚡ Skills', badge: `${(Object.values(superpowers) as Superpower[]).filter(s => s.unlocked).length}/1` },
             { id: 'upgrades', label: '⚙️ Core Upgrades', badge: '5' },
             { id: 'gear', label: '🔫 Arsenal & Tactics', badge: '6' },
             { id: 'armor', label: '🛡️ Armor Plating', badge: `Lv${player.armorLevel}` },
@@ -621,86 +620,98 @@ export const ShopModal: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Tab: Skills (Active + Passive) */}
+        {/* Tab: Skills — Solar Beam only, plus base-kit Ground Slam */}
         {tab === 'superpowers' && (
           <div className="flex flex-col gap-4">
             <div className="bg-gradient-to-r from-[#3b0764] to-[#1e1b4b] border border-purple-500/40 rounded-xl p-4">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <span>⚡</span>
-                <span>BOSS-UNLOCKED SKILLS</span>
+                <span>SKILLS</span>
               </h3>
               <p className="text-xs text-purple-200 mt-1">
-                Defeat gate bosses to unlock Skills. You may equip <b>1 Active</b> (hotkey [Z]) and up to <b>2 Passives</b> (always on) at a time. Tap a card to equip / unequip.
+                Defeat gate bosses to power up your Solar Beam (hotkey [Z]). Ground Slam (hotkey [C]) is always available — no unlock needed.
               </p>
             </div>
 
-            {(['active', 'passive'] as const).map((cat) => {
-              const list = (Object.values(superpowers) as Superpower[]).filter((s) => s.category === cat);
-              const equippedCount = list.filter((s) => s.unlocked && s.equipped).length;
-              const cap = cat === 'active' ? 1 : 2;
-              return (
-                <div key={cat}>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-bold text-white">
-                      {cat === 'active' ? '🔥 Active Skill' : '🛡️ Passive Skills'}
-                    </h4>
-                    <span className="text-[10px] font-mono text-purple-300">{equippedCount}/{cap} equipped</span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {list.map((sp) => (
-                      <div
-                        key={sp.id}
-                        onClick={() => sp.unlocked && onToggleEquipSkill?.(sp.id)}
-                        className={`rounded-xl p-4 border flex flex-col justify-between transition ${
-                          !sp.unlocked
-                            ? 'bg-black/40 border-white/5 opacity-60'
-                            : sp.equipped
-                            ? 'bg-white/10 border-purple-400 shadow-[0_0_14px_rgba(168,85,247,0.35)] cursor-pointer'
-                            : 'bg-white/5 border-purple-500/30 hover:border-purple-400/60 cursor-pointer'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex justify-between items-start">
-                            <div className="flex items-center gap-2.5">
-                              <span className="text-3xl">{sp.icon}</span>
-                              <div>
-                                <div className="font-bold text-sm text-white flex items-center gap-1.5">
-                                  <span>{sp.name}</span>
-                                  {sp.unlocked && (
-                                    <span className="px-1.5 py-0.2 bg-purple-500/30 text-purple-300 text-[10px] font-bold rounded">
-                                      LV{sp.level}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-xs font-mono" style={{ color: sp.color }}>
-                                  {cat === 'active' ? `Hotkey: [Z] • Cooldown: ${sp.cooldown / 1000}s` : 'Always on while equipped'}
-                                </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-bold text-white">🔥 Active Skill</h4>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {(Object.values(superpowers) as Superpower[])
+                  .filter((sp) => sp.id === 'orbital_beam')
+                  .map((sp) => (
+                    <div
+                      key={sp.id}
+                      onClick={() => sp.unlocked && onToggleEquipSkill?.(sp.id)}
+                      className={`rounded-xl p-4 border flex flex-col justify-between transition ${
+                        !sp.unlocked
+                          ? 'bg-black/40 border-white/5 opacity-60'
+                          : sp.equipped
+                          ? 'bg-white/10 border-purple-400 shadow-[0_0_14px_rgba(168,85,247,0.35)] cursor-pointer'
+                          : 'bg-white/5 border-purple-500/30 hover:border-purple-400/60 cursor-pointer'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-3xl">{sp.icon}</span>
+                            <div>
+                              <div className="font-bold text-sm text-white flex items-center gap-1.5">
+                                <span>{sp.name}</span>
+                                {sp.unlocked && (
+                                  <span className="px-1.5 py-0.2 bg-purple-500/30 text-purple-300 text-[10px] font-bold rounded">
+                                    LV{sp.level}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs font-mono" style={{ color: sp.color }}>
+                                Hotkey: [Z] • Cooldown: {sp.cooldown / 1000}s
                               </div>
                             </div>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                                !sp.unlocked
-                                  ? 'bg-red-500/20 text-red-400'
-                                  : sp.equipped
-                                  ? 'bg-purple-500/30 text-purple-200'
-                                  : 'bg-green-500/20 text-green-400'
-                              }`}
-                            >
-                              {!sp.unlocked ? 'LOCKED' : sp.equipped ? 'EQUIPPED' : 'UNLOCKED'}
-                            </span>
                           </div>
-
-                          <p className="text-xs text-gray-300 mt-2">{sp.desc}</p>
-                          {sp.unlocked && (
-                            <p className="text-[10px] text-gray-500 mt-1">Unlocked from: {sp.bossSource}</p>
-                          )}
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                              !sp.unlocked
+                                ? 'bg-red-500/20 text-red-400'
+                                : sp.equipped
+                                ? 'bg-purple-500/30 text-purple-200'
+                                : 'bg-green-500/20 text-green-400'
+                            }`}
+                          >
+                            {!sp.unlocked ? 'LOCKED' : sp.equipped ? 'EQUIPPED' : 'UNLOCKED'}
+                          </span>
                         </div>
+
+                        <p className="text-xs text-gray-300 mt-2">{sp.desc}</p>
+                        {sp.unlocked && (
+                          <p className="text-[10px] text-gray-500 mt-1">Unlocked from: {sp.bossSource}</p>
+                        )}
                       </div>
-                    ))}
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-bold text-white">👊 Base Kit</h4>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-xl p-4 border bg-white/5 border-purple-500/30">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-3xl">👊</span>
+                    <div>
+                      <div className="font-bold text-sm text-white">Ground Slam</div>
+                      <div className="text-xs font-mono text-[#ffcf5c]">Hotkey: [C] • Cooldown: 6s</div>
+                    </div>
                   </div>
+                  <p className="text-xs text-gray-300 mt-2">
+                    8-directional shockwave smash with knockback. Always equipped — no unlock required.
+                  </p>
                 </div>
-              );
-            })}
+              </div>
+            </div>
           </div>
         )}
 

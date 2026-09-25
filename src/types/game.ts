@@ -210,6 +210,7 @@ export interface Bullet {
   isRpg?: boolean;
   fromBoss?: boolean;
   color?: string;
+  noBossDamage?: boolean; // soldier-fired bullets — never allowed to hit a boss
 }
 
 export interface Shockwave {
@@ -437,6 +438,7 @@ export interface Soldier {
   assignedPowerName?: string;
   assignedPowerColor?: string;
   assignedPowerIcon?: string;
+  rentalExpiresAt?: number; // timestamp — soldier is auto-removed from squad when time passes this (e.g. Jack's timed activation)
 }
 
 export interface Superpower {
