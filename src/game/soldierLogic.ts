@@ -123,20 +123,20 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
   },
   thunder: {
     type: 'thunder',
-    name: 'Volt "Zeus"',
-    title: 'Thunder Paladin',
+    name: 'Volt "Thunderstrike"',
+    title: 'Lightning Trooper',
     weaponName: 'Mjolnir Lightning Arcs',
     icon: '⚡',
     color: '#fee440',
     hasSuperpower: true,
-    superpowerName: 'Mjolnir Chain Lightning',
+    superpowerName: 'Chain Lightning Strike',
     superpowerDesc: 'Summons violent electrical tempest chaining between up to 8 enemies for 500 shock dmg (8s CD).',
     baseHp: 520,
     baseDmg: 70,
     baseSpeed: 5.5,
     baseRange: 580,
     baseFireRate: 340,
-    cost: 380,
+    cost: 3000, // rented, not owned — see THUNDER_RENTAL_MS. Unlocks after 4 bosses killed.
     upgradeCosts: [450, 750],
   },
 };
@@ -144,6 +144,11 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
 // Jack is rented, not owned outright: 1000 ⚛ buys 2.5 minutes of activation,
 // then he's auto-removed from the squad and must be re-bought.
 export const RIFLEMAN_RENTAL_MS = 2.5 * 60 * 1000;
+
+// The lightning trooper is likewise a timed activation: 3000 ⚛ buys 3 minutes,
+// and he doesn't unlock at all until the player has killed 4 bosses.
+export const THUNDER_RENTAL_MS = 3 * 60 * 1000;
+export const THUNDER_UNLOCK_BOSS_KILLS = 4;
 
 export function createSoldier(type: SoldierType, spawnX: number, spawnY: number): Soldier {
   const def = SOLDIER_DEFINITIONS[type];
@@ -178,7 +183,12 @@ export function createSoldier(type: SoldierType, spawnX: number, spawnY: number)
     cost: def.cost,
     upgradeCosts: def.upgradeCosts,
     isLegendaryHero: false,
-    rentalExpiresAt: type === 'rifleman' ? performance.now() + RIFLEMAN_RENTAL_MS : undefined,
+    rentalExpiresAt:
+      type === 'rifleman'
+        ? performance.now() + RIFLEMAN_RENTAL_MS
+        : type === 'thunder'
+        ? performance.now() + THUNDER_RENTAL_MS
+        : undefined,
   };
 }
 

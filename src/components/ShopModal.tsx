@@ -2,7 +2,7 @@ import React from 'react';
 import { PlayerState, Tank, BaseState, Soldier, Superpower, SoldierType, WeaponDef, Tower } from '../types/game';
 import { WEAPONS, ARMOR_LEVELS, UPGRADES } from '../game/constants';
 import { BASE_LEVELS } from '../game/baseLogic';
-import { SOLDIER_DEFINITIONS } from '../game/soldierLogic';
+import { SOLDIER_DEFINITIONS, THUNDER_UNLOCK_BOSS_KILLS } from '../game/soldierLogic';
 import { playUpgradeSound, playHealSound } from '../audio/sound';
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
   soldiers: Soldier[];
   superpowers: Record<string, Superpower>;
   towers?: Tower[];
+  bossesDefeated: number;
   onBuyItem: (type: string, cost: number, payload?: any) => void;
   onUpgradeBase: () => void;
   onRecruitSoldier: (type: SoldierType) => void;
@@ -35,6 +36,7 @@ export const ShopModal: React.FC<Props> = ({
   soldiers,
   superpowers,
   towers = [],
+  bossesDefeated,
   onBuyItem,
   onUpgradeBase,
   onRecruitSoldier,
@@ -566,14 +568,15 @@ export const ShopModal: React.FC<Props> = ({
                 const def = SOLDIER_DEFINITIONS[type];
                 const isRecruited = soldiers.some((s) => s.type === type);
                 const isFull = soldiers.length >= base.maxSoldiers;
-                const canRecruit = !isRecruited && !isFull && atoms >= def.cost;
+                const isThunderLocked = type === 'thunder' && bossesDefeated < THUNDER_UNLOCK_BOSS_KILLS;
+                const canRecruit = !isRecruited && !isFull && !isThunderLocked && atoms >= def.cost;
 
                 return (
                   <div
                     key={type}
                     className={`bg-white/5 border rounded-xl p-3.5 flex flex-col justify-between ${
                       def.hasSuperpower ? 'border-[#ffd166]/40 shadow-[0_0_10px_rgba(255,209,102,0.1)]' : 'border-white/10'
-                    }`}
+                    } ${isThunderLocked ? 'opacity-50' : ''}`}
                   >
                     <div>
                       <div className="flex justify-between items-start">
@@ -598,6 +601,12 @@ export const ShopModal: React.FC<Props> = ({
                             ⚡ {def.superpowerDesc}
                           </div>
                         )}
+                        {type === 'rifleman' && (
+                          <div className="text-[#ff8c00] text-[11px] mt-1">⏱️ Timed activation: 2.5 min per rental</div>
+                        )}
+                        {type === 'thunder' && (
+                          <div className="text-[#ff8c00] text-[11px] mt-1">⏱️ Timed activation: 3 min per rental</div>
+                        )}
                       </div>
                     </div>
 
@@ -611,7 +620,13 @@ export const ShopModal: React.FC<Props> = ({
                       }}
                       className="mt-3 py-2 bg-[#ffcf5c] text-[#1a1305] disabled:bg-gray-800 disabled:text-gray-500 font-bold text-xs rounded-lg cursor-pointer"
                     >
-                      {isRecruited ? 'ALREADY RECRUITED' : isFull ? 'SQUAD FULL (Upgrade Base)' : `Recruit — ${def.cost} ⚛`}
+                      {isThunderLocked
+                        ? `LOCKED — DEFEAT ${THUNDER_UNLOCK_BOSS_KILLS} BOSSES (${bossesDefeated}/${THUNDER_UNLOCK_BOSS_KILLS})`
+                        : isRecruited
+                        ? 'ALREADY RECRUITED'
+                        : isFull
+                        ? 'SQUAD FULL (Upgrade Base)'
+                        : `Recruit — ${def.cost} ⚛`}
                     </button>
                   </div>
                 );

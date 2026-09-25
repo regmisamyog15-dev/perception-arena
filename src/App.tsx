@@ -67,6 +67,7 @@ import {
   updateSoldiersLogic,
   imbueSoldierWithPower,
   SOLDIER_DEFINITIONS,
+  THUNDER_UNLOCK_BOSS_KILLS,
 } from './game/soldierLogic';
 import {
   createInitialSuperpowers,
@@ -119,6 +120,7 @@ export default function App() {
         wave: eng.wave,
         kills: eng.kills,
         atoms: eng.atoms,
+        bossesDefeated: eng.bossesDefeated,
         baseLevel: eng.base.level,
         tank: {
           owned: eng.tank.owned,
@@ -172,8 +174,8 @@ export default function App() {
 
   // Reactive state for HUD
   const [hudState, setHudState] = useState({
-    hp: 1000,
-    hpMax: 1000,
+    hp: 500,
+    hpMax: 500,
     wave: 1,
     kills: 0,
     atoms: 0,
@@ -218,6 +220,7 @@ export default function App() {
     kills: 0,
     atoms: 0,
     deaths: 0,
+    bossesDefeated: 0,
     vignetteTimer: 0,
     alertText: '',
     alertTimer: 0,
@@ -225,8 +228,8 @@ export default function App() {
       x: WORLD_W / 2,
       y: WORLD_H / 2,
       r: 16,
-      hp: 1000,
-      hpMax: 1000,
+      hp: 500,
+      hpMax: 500,
       speed: 6.2,
       slots: [{ ...WEAPONS.pistol, dur: Infinity }, null, null, null],
       activeSlot: 0,
@@ -571,6 +574,7 @@ export default function App() {
     playExplosionSound();
     createParticles(b.x, b.y, b.skin.color, 150, 20, 1500);
     addAtoms(250 + engineRef.current.wave * 40);
+    engineRef.current.bossesDefeated += 1;
 
     const player = engineRef.current.player;
 
@@ -1344,7 +1348,7 @@ export default function App() {
       player.armorLevel = Math.min(5, (payload as number) || (player.armorLevel + 1));
       const def = ARMOR_LEVELS[player.armorLevel];
       if (def) {
-        player.hpMax = 1000 + def.hpBonus;
+        player.hpMax = 500 + def.hpBonus;
         player.hp = Math.min(player.hpMax, player.hp + def.hpBonus);
       }
       spawnFloatingText(player.x, player.y - 40, `ARMOR LV${player.armorLevel}!`, '#ffcf5c');
@@ -1415,6 +1419,10 @@ export default function App() {
     if (!def) return;
     if (engineRef.current.soldiers.length >= base.maxSoldiers) {
       spawnFloatingText(engineRef.current.player.x, engineRef.current.player.y - 40, 'Base at max squad capacity!', '#ff4d5e');
+      return;
+    }
+    if (type === 'thunder' && engineRef.current.bossesDefeated < THUNDER_UNLOCK_BOSS_KILLS) {
+      spawnFloatingText(engineRef.current.player.x, engineRef.current.player.y - 40, `Defeat ${THUNDER_UNLOCK_BOSS_KILLS} bosses to unlock!`, '#ff4d5e');
       return;
     }
     if (engineRef.current.atoms < def.cost) {
@@ -2330,6 +2338,7 @@ export default function App() {
     eng.wave = data.wave || 1;
     eng.kills = data.kills || 0;
     eng.atoms = data.atoms || 0;
+    eng.bossesDefeated = data.bossesDefeated || 0;
 
     eng.base = createInitialBase();
     const targetLevel = data.baseLevel || 1;
@@ -2403,8 +2412,8 @@ export default function App() {
       x: WORLD_W / 2,
       y: WORLD_H / 2,
       r: 16,
-      hp: 1000,
-      hpMax: 1000,
+      hp: 500,
+      hpMax: 500,
       speed: 6.2,
       slots: [{ ...WEAPONS.pistol, dur: Infinity }, null, null, null],
       activeSlot: 0,
@@ -2466,6 +2475,7 @@ export default function App() {
     engineRef.current.wave = 1;
     engineRef.current.kills = 0;
     engineRef.current.atoms = 0;
+    engineRef.current.bossesDefeated = 0;
     initDoorsAndWorld();
     setGameState('playing');
     startBgmMusic();
@@ -2599,6 +2609,7 @@ export default function App() {
           soldiers={engineRef.current.soldiers}
           superpowers={engineRef.current.superpowers}
           towers={engineRef.current.towers}
+          bossesDefeated={engineRef.current.bossesDefeated}
           onBuyItem={handleBuyShopItem}
           onUpgradeBase={handleUpgradeBase}
           onRecruitSoldier={handleRecruitSoldier}
