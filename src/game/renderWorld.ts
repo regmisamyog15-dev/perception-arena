@@ -23,6 +23,28 @@ import {
 import { WORLD_W, WORLD_H } from './constants';
 import { drawBossSprite, drawZombieSprite, drawSoldierSprite } from './sprites';
 
+function clamp255(v: number): number {
+  return Math.max(0, Math.min(255, v));
+}
+
+function shiftColor(hex: string, amount: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const r = clamp255(((n >> 16) & 0xff) + amount);
+  const g = clamp255(((n >> 8) & 0xff) + amount);
+  const b = clamp255((n & 0xff) + amount);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function lightenColor(hex: string, amount: number): string {
+  return shiftColor(hex, Math.abs(amount));
+}
+
+function darkenColor(hex: string, amount: number): string {
+  return shiftColor(hex, -Math.abs(amount));
+}
+
 const bgImgCache = new Map<string, HTMLImageElement>();
 function getBgImg(path: string): HTMLImageElement {
   let img = bgImgCache.get(path);
@@ -604,17 +626,28 @@ export function renderGameScene(
     ctx.globalAlpha = 1;
   }
 
-  // Cracks
+  // Cracks — portals that visibly grow and speed up as the summon nears completion
   for (const c of cracks) {
+    const progress = 1 - Math.max(0, Math.min(1, c.time / 1200));
+    const baseR = 18 + progress * 20;
+    const pulseSpeed = 100 - progress * 55; // pulses faster as it's about to pop
     ctx.fillStyle = '#111';
     ctx.beginPath();
-    ctx.arc(c.x, c.y, 30, 0, Math.PI * 2);
+    ctx.arc(c.x, c.y, baseR, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = '#ff4d5e';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = progress > 0.75 ? '#ffd166' : '#ff4d5e';
+    ctx.lineWidth = 2 + progress * 2;
     ctx.beginPath();
-    ctx.arc(c.x, c.y, 30 + Math.sin(performance.now() / 100) * 6, 0, Math.PI * 2);
+    ctx.arc(c.x, c.y, baseR + Math.sin(performance.now() / pulseSpeed) * 6, 0, Math.PI * 2);
     ctx.stroke();
+    if (progress > 0.6) {
+      ctx.globalAlpha = (progress - 0.6) * 2;
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillStyle = '#ffd166';
+      ctx.textAlign = 'center';
+      ctx.fillText('EMERGING', c.x, c.y - baseR - 10);
+      ctx.globalAlpha = 1;
+    }
   }
 
   // Boxes
@@ -974,6 +1007,31 @@ export function renderGameScene(
       ctx.shadowBlur = 0;
     }
 
+    // Charge Telegraph — a red danger lane drawn along the exact path the boss
+    // is about to ram, the instant it locks on. This is the dodge window: get
+    // out of the box before "charging" starts, or eat the hit.
+    if ((boss.state === 'chargeWindup' || boss.state === 'charging') && boss.chargeAng !== undefined) {
+      const laneLen = 950;
+      const laneHalfWidth = boss.r + player.r + 15;
+      const flicker = boss.state === 'chargeWindup' ? 0.45 + Math.sin(performance.now() / 90) * 0.25 : 0.85;
+      ctx.save();
+      ctx.rotate(boss.chargeAng);
+      ctx.fillStyle = `rgba(255, 40, 50, ${flicker})`;
+      ctx.fillRect(0, -laneHalfWidth, laneLen, laneHalfWidth * 2);
+      ctx.strokeStyle = '#ff4d5e';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(0, -laneHalfWidth, laneLen, laneHalfWidth * 2);
+      // Arrowhead at the far end so the direction reads instantly
+      ctx.fillStyle = '#ff4d5e';
+      ctx.beginPath();
+      ctx.moveTo(laneLen, -laneHalfWidth - 18);
+      ctx.lineTo(laneLen + 34, 0);
+      ctx.lineTo(laneLen, laneHalfWidth + 18);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
     // Laser Sweep Beam
     if (boss.state === 'laserSweep' && boss.laserAng !== undefined) {
       ctx.save();
@@ -1001,18 +1059,73 @@ export function renderGameScene(
       ? 'walk'
       : 'idle';
     const bossDestSize = boss.r * 3.6 * boss.squash;
+
+    // Punish-window telemetry — makes the invisible damage-multiplier system
+    // readable at a glance instead of only showing up as a floating number
+    // after the fact.
+    const isRecovering = boss.state === 'chargeRecover' || boss.state === 'tripped' ||
+      (boss.state === 'landing' && (boss.height || 0) <= 0);
+    const isCommitted = boss.state === 'charging' || boss.state === 'spinning' ||
+      boss.state === 'laserSweep' || boss.state === 'solarBeam' || boss.state === 'airborne';
+
+    if (isRecovering) {
+      // Bright green pulsing ring — "hit me now, I'm wide open"
+      const pulse = 0.55 + Math.sin(bossNow / 110) * 0.35;
+      ctx.save();
+      ctx.strokeStyle = `rgba(126, 231, 135, ${pulse})`;
+      ctx.lineWidth = 5;
+      ctx.shadowColor = '#7ee787';
+      ctx.shadowBlur = 22;
+      ctx.beginPath();
+      ctx.arc(0, 0, boss.r + 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (isCommitted) {
+      // Dull metallic tint — "hitting me now barely does anything"
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = '#2a2a2e';
+      ctx.beginPath();
+      ctx.arc(0, 0, boss.r + 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     const spriteOk = drawBossSprite(ctx, boss.skin.key, boss.facingAng, bossAnim, bossNow, bossDestSize, {
       alpha: boss.state === 'teleportOut' ? Math.max(0.15, boss.squash) : 1,
     });
 
     if (!spriteOk) {
-      ctx.fillStyle = boss.color;
+      // Shaded fallback blob — radial gradient body, ground shadow, and a
+      // simple glare/eye read so it doesn't look like a flat colored disc.
+      const grad = ctx.createRadialGradient(
+        -boss.r * 0.3, -boss.r * 0.35, boss.r * 0.15,
+        0, 0, boss.r * 1.15
+      );
+      grad.addColorStop(0, lightenColor(boss.color, 35));
+      grad.addColorStop(0.55, boss.color);
+      grad.addColorStop(1, darkenColor(boss.color, 35));
+      ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.ellipse(0, 0, boss.r * boss.squash, boss.r / boss.squash, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#000';
       ctx.lineWidth = 4;
       ctx.stroke();
+
+      // Angry glowing eyes facing the player, cheap but instantly readable
+      const eyeDist = boss.r * 0.4;
+      const eyeAng = boss.facingAng || 0;
+      const ex = Math.cos(eyeAng) * eyeDist;
+      const ey = Math.sin(eyeAng) * eyeDist * 0.5 - boss.r * 0.15;
+      ctx.fillStyle = boss.enraged ? '#ff2200' : '#ffd166';
+      ctx.shadowColor = ctx.fillStyle as string;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.ellipse(ex - 8, ey, 5, 3, eyeAng, 0, Math.PI * 2);
+      ctx.ellipse(ex + 8, ey, 5, 3, eyeAng, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
     }
     ctx.restore();
   }

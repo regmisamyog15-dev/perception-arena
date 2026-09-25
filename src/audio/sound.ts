@@ -41,6 +41,14 @@ export function isBgmPlaying(): boolean {
   return bgmPlaying;
 }
 
+export function getBgmVolume(): number {
+  return bgmVolume;
+}
+
+export function getSfxVolume(): number {
+  return sfxVolume;
+}
+
 export function setBgmVolume(v: number) {
   bgmVolume = Math.max(0, Math.min(1, v));
   if (bgmGain && audioCtx) {

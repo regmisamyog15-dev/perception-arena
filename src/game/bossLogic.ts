@@ -231,7 +231,7 @@ export function updateBossAI(
           addScreenShake(12);
         } else if (m === 'charge') {
           boss.state = 'chargeWindup';
-          boss.stateTimer = boss.enraged ? 450 : 600;
+          boss.stateTimer = boss.enraged ? 550 : 800; // longer now that the red lane gives a real dodge read
           boss.chargeAng = Math.atan2(player.y - boss.y, player.x - boss.x);
           spawnFloater(boss.x, boss.y - 100, '⚡ BULL CHARGE LOCK', '#ffcf5c', 18);
         } else if (m === 'roar') {

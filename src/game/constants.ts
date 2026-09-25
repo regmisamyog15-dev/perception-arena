@@ -241,7 +241,12 @@ export const BOSS_QUOTES = [
   "Feel the full force of my slam!",
   "Tremble before the Arena Master!",
   "Your weapons only tickle!",
-  "Is that the best your squad has?"
+  "Is that the best your squad has?",
+  "Ow. Okay. Rude.",
+  "I tripped. This never happened.",
+  "Who let you bring a SMG to a boss fight?!",
+  "Five stars, would NOT get slammed again.",
+  "Hang on, I dropped my keys— NO WAIT THAT'S FAKE, KEEP RUNNING",
 ];
 
 export const BOSS_TELEGRAPHS = [

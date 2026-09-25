@@ -78,6 +78,7 @@ import {
 } from './game/superpowerLogic';
 import { ShopModal } from './components/ShopModal';
 import { GameHUD } from './components/GameHUD';
+import StartScreen from './components/StartScreen';
 
 const SAVE_KEY = 'perception_arena_save';
 const MAX_DEATHS = 3; // player gets 3 free respawns at base; the 4th death is a full game over + save wipe
@@ -388,6 +389,14 @@ export default function App() {
   }, []);
 
   const addScreenShake = useCallback((amount: number) => {
+    let shakeEnabled = true;
+    try {
+      const raw = localStorage.getItem('perception_arena_settings');
+      if (raw) shakeEnabled = JSON.parse(raw).screenShake !== false;
+    } catch {
+      /* corrupt/missing settings — default to shake enabled */
+    }
+    if (!shakeEnabled) return;
     engineRef.current.screenShake = Math.max(engineRef.current.screenShake, amount);
   }, []);
 
@@ -483,6 +492,21 @@ export default function App() {
           p.hp = Math.max(1, p.hp - reflectDmg);
           spawnFloatingText(p.x, p.y - 40, `RAGE REFLECT -${Math.round(reflectDmg)}`, '#588157', 12);
         }
+      }
+      // Universal punish-window system — applies to every boss regardless of
+      // gimmick. Cheesing with a stationary SMG spray used to work exactly as
+      // well no matter what the boss was doing; now positioning + timing
+      // actually matter: tank a committed attack and it barely dents them,
+      // dodge it clean and the recovery window afterward is wide open.
+      const isRecovering = boss.state === 'chargeRecover' || boss.state === 'tripped' ||
+        (boss.state === 'landing' && (boss.height || 0) <= 0);
+      const isCommitted = boss.state === 'charging' || boss.state === 'spinning' ||
+        boss.state === 'laserSweep' || boss.state === 'solarBeam' || boss.state === 'airborne';
+      if (isRecovering) {
+        dmgMultiplier *= 1.6;
+        if (Math.random() < 0.35) spawnFloatingText(boss.x, boss.y - boss.r - 40, 'PUNISH!', '#7ee787', 15);
+      } else if (isCommitted) {
+        dmgMultiplier *= 0.55;
       }
     }
 
@@ -1976,6 +2000,42 @@ export default function App() {
           );
         }
 
+        // Portal Cracks — boss summon countdown. Previously these just sat on
+        // the ground forever with no zombie ever climbing out; now the portal
+        // actually births the promised zombie the instant it finishes opening.
+        for (let i = eng.cracks.length - 1; i >= 0; i--) {
+          const c = eng.cracks[i];
+          c.time -= dt;
+          if (c.time <= 0) {
+            const def = ZOMBIE_TYPES[c.type];
+            const gateScaling = 1 + (eng.currentGateLevel - 1) * 0.35 + (eng.wave - 1) * 0.18;
+            eng.zombies.push({
+              type: c.type,
+              x: c.x,
+              y: c.y,
+              r: def.r,
+              hp: def.hp * gateScaling,
+              hpMax: def.hp * gateScaling,
+              speed: def.speed * (1 + (eng.currentGateLevel - 1) * 0.05),
+              dmg: def.dmg * (1 + (eng.currentGateLevel - 1) * 0.25),
+              color: def.color,
+              dead: false,
+              kind: def.kind,
+              range: 'range' in def ? (def as any).range : 500,
+              fireCd: 'fireRate' in def ? (def as any).fireRate : 1200,
+              lastShot: 0,
+              splash: 'splash' in def ? (def as any).splash : 0,
+              isAggro: true, // summoned units come out already hunting — no free grace period
+              aggroRange: def.aggroRange || 750,
+              wanderAngle: Math.random() * Math.PI * 2,
+              wanderTimer: 2000,
+            });
+            createParticles(c.x, c.y, '#b98bff', 28, 9, 420);
+            addScreenShake(6);
+            eng.cracks.splice(i, 1);
+          }
+        }
+
         // Update Shockwaves
         for (let i = eng.shockwaves.length - 1; i >= 0; i--) {
           const sw = eng.shockwaves[i];
@@ -2535,51 +2595,12 @@ export default function App() {
 
       {/* Start Screen */}
       {gameState === 'start' && (
-        <div className="screen-overlay">
-          <h1 className="font-display text-4xl md:text-6xl font-black text-[#ff4d5e] neon-text-red mb-3 tracking-wider text-center">
-            PERCEPTION ARENA
-          </h1>
-          <div className="bg-gray-900/90 border border-gray-700 p-6 rounded-xl max-w-2xl text-left text-xs md:text-sm leading-relaxed text-gray-300 shadow-2xl">
-            <p className="mb-3 text-center text-[#83d3e1] font-bold tracking-widest uppercase">
-              MINECRAFT SAFE BASE • 7 SQUAD SOLDIERS • BOSS SUPERPOWERS
-            </p>
-            <ul className="list-disc pl-5 space-y-1.5 mb-4">
-              <li>
-                <strong className="text-[#83d3e1]">🏰 Minecraft Safe Base Sanctuary</strong>: Impenetrable home base with glowing beacon beam. Zombies cannot enter and cannot spawn nearby! Weapons are safe inside while you and your squad rapidly regenerate HP.
-              </li>
-              <li>
-                <strong className="text-[#7ee787]">👥 Upgradable Squad Soldiers (Max 7)</strong>: Recruit up to 7 specialized soldiers (Rifleman, Shotgunner, Sniper, Demolitionist) plus 3 legendary Superpower Heroes (Pyro Valkyrie, Cryo Mage, Thunder Paladin). Upgrade each soldier to Level 3 ELITE!
-              </li>
-              <li>
-                <strong className="text-[#ffd166]">⚡ Boss-Unlocked Superpowers [Z, X, C, V]</strong>: Defeat boss titans to unlock Solar Flare Orbital Laser [Z], Chronoshift Time Freeze [X], Earth Shatter [C], and Divine Aegis [V]!
-              </li>
-              <li>
-                <strong className="text-white">🗼 Climbable Sniper Towers (1000 HP)</strong>: Elevated high ground decks immune to melee. Auto-rebuilds in 4 minutes if broken by zombies!
-              </li>
-              <li>
-                <strong className="text-[#b98bff]">🎵 6 Synthesized Soundtracks</strong>: Select your preferred battle music anytime from the top player bar.
-              </li>
-            </ul>
-            <p className="text-center text-[#ffcf5c] text-xs">
-              High Score (Best Wave): <span className="font-bold text-white">{highScore}</span>
-            </p>
-          </div>
-          <div className="flex gap-3 mt-5">
-            {hasSavedGame && (
-              <button onClick={continueGame} className="btn-arcade">
-                ▶ CONTINUE SAVED RUN
-              </button>
-            )}
-            <button onClick={startGame} className="btn-arcade">
-              {hasSavedGame ? 'START NEW GAME' : 'ENTER SANCTUARY & START COMBAT'}
-            </button>
-          </div>
-          {hasSavedGame && (
-            <p className="text-center text-[#83d3e1] text-[11px] mt-2 opacity-80">
-              Starting a new game erases your saved progress.
-            </p>
-          )}
-        </div>
+        <StartScreen
+          highScore={highScore}
+          hasSavedGame={hasSavedGame}
+          onStart={startGame}
+          onContinue={continueGame}
+        />
       )}
 
       {/* Game Over Screen */}
