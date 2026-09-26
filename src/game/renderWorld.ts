@@ -1041,6 +1041,27 @@ export function renderGameScene(
     ctx.fillRect(s.x - 16, s.y - 14, 32 * Math.max(0, s.hp / s.hpMax), 4);
   }
 
+  // Phantom Feint — decoy silhouettes during the teleport telegraph. The
+  // real boss (drawn normally below, since boss.x/y already IS the real
+  // spot) pulses very slightly faster than these — a genuine, learnable
+  // tell rather than a coin flip.
+  if (boss && boss.state === 'phantomTelegraph' && boss.phantomSpots) {
+    for (const spot of boss.phantomSpots) {
+      if (spot.real) continue; // the actual boss sprite already covers this one
+      const pulse = 0.5 + Math.sin(performance.now() / 130) * 0.22;
+      ctx.save();
+      ctx.globalAlpha = 0.4 + pulse * 0.15;
+      ctx.translate(spot.x, spot.y - boss.height);
+      ctx.fillStyle = boss.color;
+      ctx.shadowColor = '#9fdb6e';
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, boss.r * boss.squash, boss.r / boss.squash, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
   // Boss Rendering
   if (boss) {
     ctx.save();

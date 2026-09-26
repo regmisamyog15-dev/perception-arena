@@ -29,17 +29,42 @@ export function updateBossAI(
   const gateTier = boss.doorIndex ? Math.floor((boss.doorIndex - 1) / 2) : 0;
   const dmgMul = (1 + gateTier * 0.22) * (boss.enraged ? 1.25 : 1.0);
 
-  // Check Enrage / Phase 2 threshold (below 40% HP)
-  if (!boss.enraged && boss.hp <= boss.hpMax * 0.4) {
-    boss.enraged = true;
+  // =====================================================
+  // MULTI-PHASE FIGHT — three real phases, not just a stronger HP bar.
+  // Phase 1 (100-65%): establishes patterns. Phase 2 (65-30%): faster,
+  // adds Phantom Feint to teleport. Phase 3 (<30%): fastest, most
+  // aggressive, full moveset. Each transition has a brief invulnerability
+  // window (so burst damage landing on the threshold can't skip the
+  // telegraph) plus a clear, satisfying beat: roar, shake, color surge.
+  // =====================================================
+  if (boss.phase === 1 && boss.hp <= boss.hpMax * 0.65) {
     boss.phase = 2;
-    boss.baseSpeed *= 1.2;
-    boss.cycleMs = Math.max(1200, boss.cycleMs * 0.75);
+    boss.enraged = true;
+    boss.phaseTransitionUntil = now + 550;
+    boss.baseSpeed *= 1.15;
+    boss.cycleMs = Math.max(1300, boss.cycleMs * 0.82);
     playBossRoarSound();
     playAlertStinger();
-    addScreenShake(25);
-    spawnFloater(boss.x, boss.y - 120, '🔥 PHASE 2: ENRAGED MODE ACTIVATED!', '#ff4d5e', 24);
-    createParticles(boss.x, boss.y, '#ff4d5e', 60, 14, 700);
+    addScreenShake(22);
+    spawnFloater(boss.x, boss.y - 120, '⚠️ PHASE 2: THE GLOVES ARE OFF', '#ff4d5e', 24);
+    createParticles(boss.x, boss.y, '#ff4d5e', 50, 12, 650);
+  } else if (boss.phase === 2 && boss.hp <= boss.hpMax * 0.30) {
+    boss.phase = 3;
+    boss.phaseTransitionUntil = now + 650;
+    boss.baseSpeed *= 1.15;
+    boss.cycleMs = Math.max(900, boss.cycleMs * 0.78);
+    playBossRoarSound();
+    playAlertStinger();
+    addScreenShake(32);
+    spawnFloater(boss.x, boss.y - 130, '💀 FINAL PHASE: NO MORE HOLDING BACK', '#ffd166', 26);
+    createParticles(boss.x, boss.y, '#ffd166', 80, 16, 800);
+  }
+  const phaseInvuln = boss.phaseTransitionUntil !== undefined && now < boss.phaseTransitionUntil;
+  if (phaseInvuln) {
+    // Brief freeze during the transition flash — reads as a deliberate
+    // "power surge" beat rather than the boss glitching mid-attack.
+    boss.squash = 1 + Math.sin(now / 40) * 0.15;
+    return;
   }
 
   boss.stateTimer -= dt;
@@ -284,6 +309,34 @@ export function updateBossAI(
     boss.facingAng = ang;
     const dToPlayer = Math.hypot(player.x - boss.x, player.y - boss.y);
 
+    // Movement variety (phase 2+): instead of always closing distance,
+    // occasionally reposition — circle-strafe or briefly back off — before
+    // resuming the chase. Keeps the boss readable but not a straight line
+    // to predict every single time. Never fires while genuinely far away
+    // (it should still close distance if the player's kited it off).
+    if (boss.phase >= 2 && boss.repositionUntil === undefined && dToPlayer < 420 && dToPlayer > 140) {
+      if (Math.random() < 0.006) {
+        boss.repositionUntil = now + 700 + Math.random() * 500;
+        boss.repositionDir = Math.random() < 0.5 ? 1 : -1;
+      }
+    }
+    if (boss.repositionUntil !== undefined) {
+      if (now >= boss.repositionUntil) {
+        boss.repositionUntil = undefined;
+      } else {
+        // Strafe perpendicular to the player rather than a plain retreat —
+        // reads as "circling for an opening", not "running away".
+        const strafeAng = ang + (Math.PI / 2) * (boss.repositionDir || 1);
+        if (!boss.skin.flies || dToPlayer > 260) {
+          boss.x += Math.cos(strafeAng) * boss.baseSpeed * speedMul * 0.85;
+          boss.y += Math.sin(strafeAng) * boss.baseSpeed * speedMul * 0.85;
+        }
+        boss.squash = 1 + Math.sin(now / 90) * 0.06;
+        if (boss.skin.flies) boss.height = 60 + Math.sin(now / 260) * 12;
+        return;
+      }
+    }
+
     if (!boss.skin.flies || dToPlayer > 260) {
       boss.x += Math.cos(ang) * boss.baseSpeed * speedMul;
       boss.y += Math.sin(ang) * boss.baseSpeed * speedMul;
@@ -293,8 +346,12 @@ export function updateBossAI(
 
     if (boss.stateTimer <= 0) {
       const moves = [...boss.skin.moves];
-      if (boss.enraged) {
+      if (boss.phase >= 2) {
         moves.push('solarBeam', 'pushSlam', 'laser', 'charge', 'spikeField');
+      }
+      if (boss.phase >= 3) {
+        // Final phase: the complete attack vocabulary, nothing held back.
+        moves.push('teleport', 'fireball', 'spin', 'megasmash');
       }
 
       boss.moveIdx = (boss.moveIdx + 1) % (moves.length + 1);
@@ -336,7 +393,11 @@ export function updateBossAI(
         } else if (m === 'teleport') {
           boss.state = 'teleportOut';
           boss.stateTimer = 280;
-          spawnFloater(boss.x, boss.y - 100, '*shadow blink*', '#9fdb6e', 18);
+          spawnFloater(
+            boss.x, boss.y - 100,
+            boss.phase >= 2 ? '👻 PHANTOM FEINT — WATCH CLOSELY' : '*shadow blink*',
+            '#9fdb6e', 18
+          );
         } else if (m === 'spin') {
           boss.state = 'spinWindup';
           boss.stateTimer = 500;
@@ -636,22 +697,59 @@ export function updateBossAI(
   } else if (boss.state === 'teleportOut') {
     boss.squash = Math.max(0.1, boss.squash - dt / 250);
     if (boss.stateTimer <= 0) {
-      const a = Math.random() * Math.PI * 2;
-      boss.x = player.x + Math.cos(a) * 160;
-      boss.y = player.y + Math.sin(a) * 160;
-      boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, boss.x));
-      boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, boss.y));
+      if (boss.phase >= 2) {
+        // PHANTOM FEINT — signature mechanic. Vanish, then flicker into
+        // existence at 3 candidate spots at once (2 harmless decoys, 1
+        // real). All 3 are visually identical except the real one pulses
+        // very slightly faster — a genuine, learnable tell, not a coin
+        // flip. After a readable beat, the decoys pop and only the real
+        // boss remains, immediately following up with the blink strike.
+        const spots: { x: number; y: number; real: boolean }[] = [];
+        const realIdx = Math.floor(Math.random() * 3);
+        for (let i = 0; i < 3; i++) {
+          const a = (Math.PI * 2 * i) / 3 + Math.random() * 0.6;
+          let sx = player.x + Math.cos(a) * 170;
+          let sy = player.y + Math.sin(a) * 170;
+          sx = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, sx));
+          sy = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, sy));
+          spots.push({ x: sx, y: sy, real: i === realIdx });
+        }
+        boss.phantomSpots = spots;
+        const real = spots[realIdx];
+        boss.x = real.x;
+        boss.y = real.y;
+        createParticles(boss.x, boss.y, '#9fdb6e', 15, 6);
+        boss.squash = 1.1;
+        boss.state = 'phantomTelegraph';
+        boss.stateTimer = 550;
+      } else {
+        const a = Math.random() * Math.PI * 2;
+        boss.x = player.x + Math.cos(a) * 160;
+        boss.y = player.y + Math.sin(a) * 160;
+        boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, boss.x));
+        boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, boss.y));
+        boss.squash = 1.3;
+        createParticles(boss.x, boss.y, '#9fdb6e', 25, 8);
+        boss.state = 'teleportStrike';
+        boss.stateTimer = 350;
+        spawnFloater(boss.x, boss.y - 90, '*BLINK STRIKE*', '#9fdb6e', 20);
+      }
+    }
+  } else if (boss.state === 'phantomTelegraph') {
+    if (boss.stateTimer <= 0) {
+      boss.phantomSpots = undefined;
       boss.squash = 1.3;
-      createParticles(boss.x, boss.y, '#9fdb6e', 25, 8);
+      createParticles(boss.x, boss.y, '#9fdb6e', 30, 9);
+      addScreenShake(10);
       boss.state = 'teleportStrike';
-      boss.stateTimer = 350;
+      boss.stateTimer = 320;
       spawnFloater(boss.x, boss.y - 90, '*BLINK STRIKE*', '#9fdb6e', 20);
     }
   } else if (boss.state === 'teleportStrike') {
     if (boss.stateTimer <= 0) {
       const pd = Math.hypot(player.x - boss.x, player.y - boss.y);
       if (pd < 160 && !tank.mounted) {
-        const blinkDmg = Math.round(55 * dmgMul);
+        const blinkDmg = Math.round((boss.phase >= 2 ? 68 : 55) * dmgMul);
         applyPlayerDamage(blinkDmg);
         flashVignette();
         spawnFloater(player.x, player.y - 40, `-${blinkDmg} BLINK STRIKE`, '#9fdb6e', 22);

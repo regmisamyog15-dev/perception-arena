@@ -144,9 +144,14 @@ export const GameHUD: React.FC<Props> = ({
               <div className="font-display text-2xl font-black text-[#ff4d5e] neon-text-red tracking-widest text-center">
                 {hudState.bossName}
               </div>
-              {hudState.bossEnraged && (
+              {hudState.bossPhase === 2 && (
                 <span className="px-2 py-0.5 text-[10px] font-black tracking-widest bg-red-600/40 border border-red-500 text-red-300 rounded animate-pulse shadow-[0_0_10px_#f00]">
-                  🔥 PHASE 2: ENRAGED
+                  ⚠️ PHASE 2
+                </span>
+              )}
+              {hudState.bossPhase === 3 && (
+                <span className="px-2 py-0.5 text-[10px] font-black tracking-widest bg-yellow-600/40 border border-yellow-400 text-yellow-200 rounded animate-pulse shadow-[0_0_14px_#ffd166]">
+                  💀 FINAL PHASE
                 </span>
               )}
             </div>
@@ -160,10 +165,18 @@ export const GameHUD: React.FC<Props> = ({
             <div className="w-full h-5 bg-gray-950 rounded border-2 border-[#ff4d5e] relative overflow-hidden shadow-[0_0_15px_rgba(255,77,94,0.4)]">
               <div
                 className={`absolute top-0 left-0 h-full transition-all duration-150 ${
-                  hudState.bossEnraged ? 'bg-gradient-to-r from-red-600 via-orange-500 to-yellow-400' : 'bg-[#ff4d5e]'
+                  hudState.bossPhase === 3
+                    ? 'bg-gradient-to-r from-red-700 via-orange-500 to-yellow-300'
+                    : hudState.bossPhase === 2
+                    ? 'bg-gradient-to-r from-red-600 via-orange-500 to-yellow-400'
+                    : 'bg-[#ff4d5e]'
                 }`}
                 style={{ width: `${hudState.bossHpPct}%` }}
               />
+              {/* Phase-boundary ticks — 65% and 30% — so the thresholds that
+                  trigger phase transitions are visible, not a guess */}
+              <div className="absolute top-0 h-full w-[2px] bg-black/70" style={{ left: '30%' }} />
+              <div className="absolute top-0 h-full w-[2px] bg-black/70" style={{ left: '65%' }} />
             </div>
             <div className="text-[10px] text-[#ffd166] mt-1 font-bold">
               ⚡ Defeat this Boss to unlock Superpowers!

@@ -456,6 +456,14 @@ export default function App() {
       const boss = ent as Boss;
       const gimmick = boss.skin.gimmick;
 
+      // Brief invulnerability during a phase-transition flash — prevents a
+      // lucky burst from skipping the telegraph and chain-triggering both
+      // transitions in the same instant.
+      if (boss.phaseTransitionUntil !== undefined && performance.now() < boss.phaseTransitionUntil) {
+        spawnFloatingText(boss.x, boss.y - boss.r - 30, 'SURGING...', '#ffd166', 13);
+        return;
+      }
+
       // G2: Warlock Soul Shield — ranged attacks blocked while shield active
       if (gimmick === 'shield_of_souls' && boss.gimmickActive && boss.soulShieldHp && boss.soulShieldHp > 0) {
         if (isRanged !== false) {
@@ -608,9 +616,24 @@ export default function App() {
 
   const handleBossDeath = useCallback((b: Boss) => {
     spawnFloatingText(b.x, b.y, `${b.skin.name} DEFEATED!`, '#ffd166', 30);
-    engineRef.current.screenShake = 40;
+    engineRef.current.screenShake = 46;
     playExplosionSound();
-    createParticles(b.x, b.y, b.skin.color, 150, 20, 1500);
+    // Layered death burst instead of one flat particle dump — a quick
+    // color/size progression (core flash -> boss-color shockwave -> embers)
+    // reads as a real collapse rather than a single pop.
+    createParticles(b.x, b.y, '#ffffff', 30, 10, 350);
+    createParticles(b.x, b.y, b.skin.color, 110, 18, 1300);
+    createParticles(b.x, b.y, '#ffd166', 40, 22, 900);
+    engineRef.current.particles.push({
+      id: Math.random().toString(),
+      x: b.x,
+      y: b.y,
+      isFlash: true,
+      r: b.r * 4.2,
+      life: 400,
+      maxLife: 400,
+      color: 'rgba(255, 255, 255, 0.55)',
+    });
     addAtoms(250 + engineRef.current.wave * 40);
     engineRef.current.bossesDefeated += 1;
 

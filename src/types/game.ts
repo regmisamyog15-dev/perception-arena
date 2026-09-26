@@ -137,7 +137,7 @@ export interface Boss {
   baseSpeed: number;
   color: string;
   dead: boolean;
-  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField';
+  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField';
   stateTimer: number;
   targetAng: number;
   facingAng: number;
@@ -154,8 +154,12 @@ export interface Boss {
   isGuardian?: boolean;
   isFinal?: boolean;
   doorIndex?: number;
-  phase: 1 | 2;
+  phase: 1 | 2 | 3;
   enraged: boolean;
+  phaseTransitionUntil?: number; // brief invulnerability + telegraph window during a phase change
+  phantomSpots?: { x: number; y: number; real: boolean }[]; // Phantom Feint decoys
+  repositionUntil?: number; // timestamp — boss is strafing/repositioning instead of closing distance
+  repositionDir?: number;   // 1 or -1, which way it's circling
   laserAng?: number;
   laserSweepDir?: number;
   laserTimer?: number;
