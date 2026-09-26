@@ -1,5 +1,6 @@
 import { Soldier, SoldierType, PlayerState, Zombie, Boss, Bullet, Particle, Floater } from '../types/game';
 import { isEntityInsideBase } from './baseLogic';
+import { MAX_SOLDIER_LEVEL, REVIVE_POD_HEAL_MS, NO_POD_RESPAWN_MS } from './constants';
 
 export interface SoldierDef {
   type: SoldierType;
@@ -17,7 +18,7 @@ export interface SoldierDef {
   baseRange: number;
   baseFireRate: number;
   cost: number;
-  upgradeCosts: [number, number]; // Cost to upgrade to Lv2, Lv3
+  upgradeCosts: number[]; // cost to reach each level from 2 up to MAX_SOLDIER_LEVEL
 }
 
 export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
@@ -29,13 +30,13 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
     icon: '🎖️',
     color: '#4cc9f0',
     hasSuperpower: false,
-    baseHp: 350,
-    baseDmg: 38,
+    baseHp: 460,
+    baseDmg: 54,
     baseSpeed: 5.4,
-    baseRange: 500,
-    baseFireRate: 200,
+    baseRange: 520,
+    baseFireRate: 160,
     cost: 1000, // rented, not owned — see RIFLEMAN_RENTAL_MS
-    upgradeCosts: [110, 220],
+    upgradeCosts: [110, 220, 340, 480, 650, 850, 1080, 1350, 1650, 1980],
   },
   shotgunner: {
     type: 'shotgunner',
@@ -51,7 +52,7 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
     baseRange: 360,
     baseFireRate: 520,
     cost: 110,
-    upgradeCosts: [150, 280],
+    upgradeCosts: [150, 280, 430, 600, 800, 1030, 1290, 1580, 1900, 2250],
   },
   sniper: {
     type: 'sniper',
@@ -67,7 +68,7 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
     baseRange: 800,
     baseFireRate: 880,
     cost: 140,
-    upgradeCosts: [190, 340],
+    upgradeCosts: [190, 340, 510, 700, 920, 1170, 1450, 1760, 2100, 2470],
   },
   demolitionist: {
     type: 'demolitionist',
@@ -83,7 +84,7 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
     baseRange: 540,
     baseFireRate: 1150,
     cost: 180,
-    upgradeCosts: [240, 420],
+    upgradeCosts: [240, 420, 620, 840, 1090, 1370, 1680, 2020, 2390, 2790],
   },
   pyro: {
     type: 'pyro',
@@ -101,7 +102,7 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
     baseRange: 460,
     baseFireRate: 180,
     cost: 280,
-    upgradeCosts: [350, 600],
+    upgradeCosts: [350, 600, 880, 1190, 1530, 1900, 2300, 2730, 3190, 3680],
   },
   cryo: {
     type: 'cryo',
@@ -119,7 +120,7 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
     baseRange: 520,
     baseFireRate: 260,
     cost: 320,
-    upgradeCosts: [380, 650],
+    upgradeCosts: [380, 650, 950, 1280, 1640, 2030, 2450, 2900, 3380, 3890],
   },
   thunder: {
     type: 'thunder',
@@ -137,7 +138,7 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
     baseRange: 580,
     baseFireRate: 340,
     cost: 3000, // rented, not owned — see THUNDER_RENTAL_MS. Unlocks after 4 bosses killed.
-    upgradeCosts: [450, 750],
+    upgradeCosts: [450, 750, 1080, 1440, 1830, 2250, 2700, 3180, 3690, 4230],
   },
 };
 
@@ -217,22 +218,35 @@ export function imbueSoldierWithPower(
 }
 
 export function upgradeSoldier(soldier: Soldier): boolean {
-  if (soldier.level >= 3) return false;
+  if (soldier.level >= MAX_SOLDIER_LEVEL) return false;
   soldier.level += 1;
   const def = SOLDIER_DEFINITIONS[soldier.type];
+  const heroMul = soldier.isLegendaryHero ? 1.5 : 1;
+  const heroDmgMul = soldier.isLegendaryHero ? 1.35 : 1;
 
   if (soldier.level === 2) {
-    soldier.hpMax = Math.round(def.baseHp * 1.5 * (soldier.isLegendaryHero ? 1.5 : 1));
+    soldier.hpMax = Math.round(def.baseHp * 1.5 * heroMul);
     soldier.hp = soldier.hpMax;
-    soldier.dmg = Math.round(def.baseDmg * 1.4 * (soldier.isLegendaryHero ? 1.35 : 1));
+    soldier.dmg = Math.round(def.baseDmg * 1.4 * heroDmgMul);
     soldier.fireRate = Math.round(def.baseFireRate * 0.82);
     if (soldier.superpowerCd) soldier.superpowerCd = Math.round(soldier.superpowerCd * 0.85);
   } else if (soldier.level === 3) {
-    soldier.hpMax = Math.round(def.baseHp * 2.2 * (soldier.isLegendaryHero ? 1.5 : 1));
+    soldier.hpMax = Math.round(def.baseHp * 2.2 * heroMul);
     soldier.hp = soldier.hpMax;
-    soldier.dmg = Math.round(def.baseDmg * 2.0 * (soldier.isLegendaryHero ? 1.35 : 1));
+    soldier.dmg = Math.round(def.baseDmg * 2.0 * heroDmgMul);
     soldier.fireRate = Math.round(def.baseFireRate * 0.68);
     if (soldier.superpowerCd) soldier.superpowerCd = Math.round(soldier.superpowerCd * 0.7);
+  } else {
+    // Levels 4-11: keep climbing past the old "MAX ELITE" ceiling instead of
+    // stopping there. Each level compounds on the level-3 baseline.
+    const tier = soldier.level - 3; // 1..8
+    soldier.hpMax = Math.round(def.baseHp * 2.2 * heroMul * (1 + tier * 0.22));
+    soldier.hp = soldier.hpMax;
+    soldier.dmg = Math.round(def.baseDmg * 2.0 * heroDmgMul * (1 + tier * 0.18));
+    soldier.fireRate = Math.max(60, Math.round(def.baseFireRate * 0.68 * (1 - tier * 0.035)));
+    if (soldier.superpowerCd) {
+      soldier.superpowerCd = Math.max(2500, Math.round(soldier.superpowerCd * 0.96));
+    }
   }
   return true;
 }
@@ -267,16 +281,32 @@ export function updateSoldiersLogic(
       continue;
     }
 
-    // Handle Respawn if knocked down
+    // Handle downed soldiers: dragged back to base and healed in the
+    // Resurrection Pod, or (if the pod hasn't been built yet) a slow
+    // fallback respawn so an early death can't hard-lock progress.
     if (s.isDead) {
-      s.respawnTimer -= dt;
-      if (s.respawnTimer <= 0) {
-        s.isDead = false;
-        s.hp = s.hpMax;
-        s.x = base.x + (Math.random() - 0.5) * 80;
-        s.y = base.y + (Math.random() - 0.5) * 80;
-        spawnFloatingText(s.x, s.y - 30, `🛡️ ${s.name} RESPAWNED!`, '#7ee787', 16);
-        createParticles(s.x, s.y, s.color, 25, 4, 350);
+      if (s.podHealing) {
+        const elapsed = time - (s.podHealStart || time);
+        if (elapsed >= REVIVE_POD_HEAL_MS) {
+          s.isDead = false;
+          s.podHealing = false;
+          s.hp = s.hpMax;
+          spawnFloatingText(s.x, s.y - 30, `✨ ${s.name} REVIVED BY THE POD!`, '#7ee787', 18);
+          createParticles(s.x, s.y, '#83d3e1', 30, 5, 400);
+        }
+      } else if (!s.carriedBody) {
+        // No one has dragged him to the pod yet — a long fallback timer
+        // still applies so the squad isn't lost forever if you never build
+        // one, but it's far slower than actually carrying him back.
+        s.respawnTimer -= dt;
+        if (s.respawnTimer <= 0) {
+          s.isDead = false;
+          s.hp = s.hpMax;
+          s.x = base.x + (Math.random() - 0.5) * 80;
+          s.y = base.y + (Math.random() - 0.5) * 80;
+          spawnFloatingText(s.x, s.y - 30, `🛡️ ${s.name} RESPAWNED!`, '#7ee787', 16);
+          createParticles(s.x, s.y, s.color, 25, 4, 350);
+        }
       }
       continue;
     }
@@ -370,11 +400,11 @@ export function updateSoldiersLogic(
         } else if (s.type === 'pyro') {
           // Celestial Meteor Strike
           spawnFloatingText(s.x, s.y - 45, '🔥 METEOR STRIKE!', '#e63946', 18);
-          for (let m = 0; m < (s.level === 3 ? 5 : 3); m++) {
+          for (let m = 0; m < (s.level >= 3 ? 5 : 3); m++) {
             const tx = target.x + (Math.random() - 0.5) * 160;
             const ty = target.y + (Math.random() - 0.5) * 160;
             setTimeout(() => {
-              explode(tx, ty, s.level === 3 ? 240 : 180, s.dmg * 4, false);
+              explode(tx, ty, s.level >= 3 ? 240 : 180, s.dmg * 4, false);
               createParticles(tx, ty, '#ff4d00', 40, 8, 600);
             }, m * 220);
           }
@@ -383,7 +413,7 @@ export function updateSoldiersLogic(
           spawnFloatingText(s.x, s.y - 45, '❄️ BLIZZARD FREEZE!', '#00f5d4', 18);
           createParticles(s.x, s.y, '#a0f0ff', 50, 10, 500);
 
-          const freezeRadius = s.level === 3 ? 500 : 380;
+          const freezeRadius = s.level >= 3 ? 500 : 380;
           for (const z of zombies) {
             if (z.dead) continue;
             if (Math.hypot(z.x - s.x, z.y - s.y) < freezeRadius) {
@@ -392,13 +422,13 @@ export function updateSoldiersLogic(
               createParticles(z.x, z.y, '#00f5d4', 8, 3, 400);
               setTimeout(() => {
                 if (!z.dead) z.speed = 1.5;
-              }, s.level === 3 ? 5000 : 3500);
+              }, s.level >= 3 ? 5000 : 3500);
             }
           }
         } else if (s.type === 'thunder') {
           // Mjolnir Chain Lightning
           spawnFloatingText(s.x, s.y - 45, '⚡ CHAIN LIGHTNING!', '#fee440', 18);
-          const chainMax = s.level === 3 ? 10 : s.level === 2 ? 8 : 6;
+          const chainMax = s.level >= 3 ? 10 : s.level === 2 ? 8 : 6;
           let currentChain = 0;
           let lastChainX = s.x;
           let lastChainY = s.y;
@@ -426,7 +456,7 @@ export function updateSoldiersLogic(
         const bulletColor = s.isLegendaryHero ? (s.assignedPowerColor || '#ffd166') : s.color;
 
         if (s.type === 'shotgunner') {
-          const pellets = s.level === 3 ? 9 : s.level === 2 ? 7 : 6;
+          const pellets = s.level >= 3 ? 9 : s.level === 2 ? 7 : 6;
           for (let p = 0; p < pellets; p++) {
             const pAng = ang + (Math.random() - 0.5) * 0.35;
             bullets.push({
@@ -450,7 +480,7 @@ export function updateSoldiersLogic(
             vy: Math.sin(ang) * 16,
             dmg: s.dmg,
             cls: 'rocket',
-            splash: s.level === 3 ? 240 : 180,
+            splash: s.level >= 3 ? 240 : 180,
             life: 1200,
             noBossDamage: true,
           });
@@ -494,7 +524,7 @@ export function updateSoldiersLogic(
           if (s.hp <= 0 && !s.isDead) {
             s.hp = 0;
             s.isDead = true;
-            s.respawnTimer = 20000; // 20s respawn at base
+            s.respawnTimer = NO_POD_RESPAWN_MS; // slow fallback if never carried to a pod
             spawnFloatingText(s.x, s.y - 30, `⚠️ ${s.name} DOWN!`, '#ff4d5e', 18);
             createParticles(s.x, s.y, '#ff4d5e', 20, 4, 300);
             break;

@@ -433,6 +433,9 @@ export interface BaseState {
   lastTurretShot: number;
   powerStandX?: number;
   powerStandY?: number;
+  // Resurrection Pod — a purchasable structure that heals dragged-back soldiers
+  hasRevivePod?: boolean;
+  podHealingSoldierId?: string | null;
 }
 
 export type SoldierType = 'rifleman' | 'shotgunner' | 'sniper' | 'demolitionist' | 'pyro' | 'cryo' | 'thunder';
@@ -473,6 +476,10 @@ export interface Soldier {
   assignedPowerColor?: string;
   assignedPowerIcon?: string;
   rentalExpiresAt?: number; // timestamp — soldier is auto-removed from squad when time passes this (e.g. Jack's timed activation)
+  // Downed-soldier drag & revive-pod system
+  carriedBody?: boolean;   // true while the player is dragging this body back to base
+  podHealing?: boolean;    // true while resting in the Resurrection Pod, healing
+  podHealStart?: number;   // timestamp healing began, for progress display
 }
 
 export interface Superpower {

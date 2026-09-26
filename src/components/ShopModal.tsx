@@ -1,6 +1,6 @@
 import React from 'react';
 import { PlayerState, Tank, BaseState, Soldier, Superpower, SoldierType, WeaponDef, Tower } from '../types/game';
-import { WEAPONS, ARMOR_LEVELS, UPGRADES } from '../game/constants';
+import { WEAPONS, ARMOR_LEVELS, UPGRADES, REVIVE_POD_COST, MAX_SOLDIER_LEVEL } from '../game/constants';
 import { BASE_LEVELS } from '../game/baseLogic';
 import { SOLDIER_DEFINITIONS, THUNDER_UNLOCK_BOSS_KILLS } from '../game/soldierLogic';
 import { playUpgradeSound, playHealSound } from '../audio/sound';
@@ -15,6 +15,7 @@ interface Props {
   superpowers: Record<string, Superpower>;
   towers?: Tower[];
   bossesDefeated: number;
+  currentGateLevel?: number;
   onBuyItem: (type: string, cost: number, payload?: any) => void;
   onUpgradeBase: () => void;
   onRecruitSoldier: (type: SoldierType) => void;
@@ -37,6 +38,7 @@ export const ShopModal: React.FC<Props> = ({
   superpowers,
   towers = [],
   bossesDefeated,
+  currentGateLevel = 1,
   onBuyItem,
   onUpgradeBase,
   onRecruitSoldier,
@@ -439,6 +441,42 @@ export const ShopModal: React.FC<Props> = ({
               </div>
             </div>
 
+            {/* Resurrection Pod — heals soldiers dragged back after being downed */}
+            <div
+              className={`rounded-xl p-3.5 border ${
+                base.hasRevivePod ? 'bg-cyan-950/20 border-cyan-700/50' : 'bg-white/5 border-[#83d3e1]/40'
+              }`}
+            >
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-2xl">🧪</span>
+                    <span className="font-bold text-sm text-white">Resurrection Pod</span>
+                    {base.hasRevivePod && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-[#83d3e1] font-bold">ONLINE</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-300">
+                    A bio-arcane stasis chamber — holds a downed soldier suspended and floating while it heals him.
+                    Drag a fallen soldier's body back to base to place him inside; without it, he only recovers on
+                    a very slow fallback timer.
+                  </p>
+                </div>
+              </div>
+              <button
+                disabled={base.hasRevivePod || atoms < REVIVE_POD_COST}
+                onClick={() => {
+                  if (!base.hasRevivePod && atoms >= REVIVE_POD_COST) {
+                    playUpgradeSound();
+                    onBuyItem('revivePod', REVIVE_POD_COST);
+                  }
+                }}
+                className="mt-3 py-2 w-full bg-[#83d3e1] text-[#062a30] disabled:bg-gray-800 disabled:text-gray-500 font-bold text-xs rounded-lg cursor-pointer"
+              >
+                {base.hasRevivePod ? 'BUILT' : `Build Resurrection Pod — ${REVIVE_POD_COST} ⚛`}
+              </button>
+            </div>
+
             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Base Upgrade Tiers</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {[2, 3, 4].map((lvl) => {
@@ -502,8 +540,10 @@ export const ShopModal: React.FC<Props> = ({
                 <h4 className="text-xs font-bold text-[#7ee787] uppercase tracking-wider mb-2">Active Squad Soldiers</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {soldiers.map((s) => {
-                    const nextCost = s.level < 3 ? s.upgradeCosts[s.level - 1] : 0;
-                    const canUp = s.level < 3 && atoms >= nextCost;
+                    const isMaxed = s.level >= MAX_SOLDIER_LEVEL;
+                    const nextCost = !isMaxed ? s.upgradeCosts[s.level - 1] : 0;
+                    const gateLocked = s.type === 'shotgunner' && currentGateLevel < 2;
+                    const canUp = !isMaxed && !gateLocked && atoms >= nextCost;
 
                     return (
                       <div
@@ -518,7 +558,7 @@ export const ShopModal: React.FC<Props> = ({
                                 <div className="font-bold text-sm text-white flex items-center gap-1.5">
                                   <span>{s.name}</span>
                                   <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/10 text-[#ffd166]">
-                                    {s.level === 3 ? '★★★ MAX ELITE' : s.level === 2 ? '★★ LV2' : '★ LV1'}
+                                    {s.level >= MAX_SOLDIER_LEVEL ? '★★★ MAX ELITE' : `★ LV${s.level}`}
                                   </span>
                                 </div>
                                 <div className="text-[11px] text-gray-400">{s.weaponName}</div>
@@ -552,7 +592,11 @@ export const ShopModal: React.FC<Props> = ({
                           }}
                           className="mt-3 py-1.5 bg-[#ffcf5c] text-[#1a1305] disabled:bg-gray-800 disabled:text-gray-500 font-bold text-xs rounded-lg cursor-pointer"
                         >
-                          {s.level >= 3 ? 'MAX LEVEL (ELITE 3★)' : `Upgrade to Level ${s.level + 1} — ${nextCost} ⚛`}
+                          {isMaxed
+                            ? `MAX LEVEL (ELITE ${MAX_SOLDIER_LEVEL}★)`
+                            : gateLocked
+                            ? '🔒 Clear Gate 1 Boss Door First'
+                            : `Upgrade to Level ${s.level + 1} — ${nextCost} ⚛`}
                         </button>
                       </div>
                     );

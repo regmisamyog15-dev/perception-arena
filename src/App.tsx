@@ -37,6 +37,7 @@ import {
   FINAL_BOSS_SKIN,
   UPGRADES,
   GATE_DEFINITIONS,
+  MAX_SOLDIER_LEVEL,
 } from './game/constants';
 import {
   playShootSound,
@@ -1367,6 +1368,18 @@ export default function App() {
     }
 
     if (atoms < cost) return;
+
+    // Resurrection Pod is a one-time structure — check this before the
+    // generic atoms deduction below so a repeat click can't double-charge.
+    if (type === 'revivePod') {
+      if (engineRef.current.base.hasRevivePod) return;
+      engineRef.current.atoms -= cost;
+      engineRef.current.base.hasRevivePod = true;
+      playUpgradeSound();
+      spawnFloatingText(player.x, player.y - 50, '⚕️ RESURRECTION POD ONLINE!', '#83d3e1', 22);
+      return;
+    }
+
     engineRef.current.atoms -= cost;
     playUpgradeSound();
 
@@ -1463,10 +1476,14 @@ export default function App() {
     spawnFloatingText(base.x, base.y - 50, `🎖️ RECRUITED ${s.name}!`, s.color, 22);
   }, [spawnFloatingText]);
 
-  // Upgrade Soldier (Level 1 -> 2 -> 3 Max)
+  // Upgrade Soldier (Level 1 -> MAX_SOLDIER_LEVEL)
   const handleUpgradeSoldier = useCallback((id: string) => {
     const s = engineRef.current.soldiers.find((sol) => sol.id === id);
-    if (!s || s.level >= 3) return;
+    if (!s || s.level >= MAX_SOLDIER_LEVEL) return;
+    if (s.type === 'shotgunner' && engineRef.current.currentGateLevel < 2) {
+      spawnFloatingText(s.x, s.y - 50, '🔒 CLEAR GATE 1 BOSS DOOR FIRST!', '#ff4d5e', 18);
+      return;
+    }
     const cost = s.upgradeCosts[s.level - 1];
     if (engineRef.current.atoms < cost) return;
 
@@ -2676,6 +2693,7 @@ export default function App() {
           superpowers={engineRef.current.superpowers}
           towers={engineRef.current.towers}
           bossesDefeated={engineRef.current.bossesDefeated}
+          currentGateLevel={engineRef.current.currentGateLevel}
           onBuyItem={handleBuyShopItem}
           onUpgradeBase={handleUpgradeBase}
           onRecruitSoldier={handleRecruitSoldier}
