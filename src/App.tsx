@@ -209,6 +209,17 @@ export default function App() {
     groundSlamLastUsed: 0,
   });
 
+  // Shop actions mutate engineRef directly (perf — avoids a re-render every
+  // frame during normal play), but the main per-frame setHudState sync is
+  // paused while the shop modal is open (see `!shopOpen` gate below). Without
+  // this, atoms/base-level/etc shown in the shop would freeze at whatever
+  // they were the instant it opened until some unrelated state change forced
+  // a re-render (e.g. switching tabs). Call this after every shop purchase
+  // so the balance and unlock buttons update immediately, live.
+  const syncShopState = useCallback(() => {
+    setHudState((h) => ({ ...h, atoms: engineRef.current.atoms }));
+  }, []);
+
   // Engine persistent refs
   const engineRef = useRef({
     cw: window.innerWidth,
@@ -778,7 +789,8 @@ export default function App() {
     if (res.message) {
       spawnFloatingText(engineRef.current.player.x, engineRef.current.player.y - 40, res.message, '#a78bfa', 13);
     }
-  }, [spawnFloatingText]);
+    syncShopState();
+  }, [spawnFloatingText, syncShopState]);
 
   const performMelee = useCallback(() => {
     const player = engineRef.current.player;
@@ -1298,8 +1310,9 @@ export default function App() {
     if (w.ammoMax) w.ammo = w.ammoMax;
     w.damaged = false;
     playUpgradeSound();
+    syncShopState();
     spawnFloatingText(eng.player.x, eng.player.y - 40, `🔧 ${w.name} RESTORED 100%!`, '#7ee787', 22);
-  }, [spawnFloatingText]);
+  }, [spawnFloatingText, syncShopState]);
 
   const handleRebuildWeapon = useCallback((weaponId: string) => {
     const eng = engineRef.current;
@@ -1313,8 +1326,9 @@ export default function App() {
     eng.atoms -= cost;
     lootWeapon(def);
     playUpgradeSound();
+    syncShopState();
     spawnFloatingText(eng.player.x, eng.player.y - 40, `⚙️ ${def.name} REBUILT & EQUIPPED!`, '#ffd166', 22);
-  }, [lootWeapon, spawnFloatingText]);
+  }, [lootWeapon, spawnFloatingText, syncShopState]);
 
   const handleRepairTowers = useCallback(() => {
     const eng = engineRef.current;
@@ -1330,9 +1344,10 @@ export default function App() {
       t.repairTimer = 0;
     });
     playUpgradeSound();
+    syncShopState();
     showAlert('🗼 ALL SNIPER WATCHTOWERS REPAIRED');
     spawnFloatingText(eng.player.x, eng.player.y - 40, '🗼 ALL TOWERS RESTORED 1000 HP!', '#83d3e1', 22);
-  }, [showAlert, spawnFloatingText]);
+  }, [showAlert, spawnFloatingText, syncShopState]);
 
   const handleUpgradeTank = useCallback((component: 'armor' | 'cannon' | 'speed' | 'nanites') => {
     const eng = engineRef.current;
@@ -1353,8 +1368,9 @@ export default function App() {
       tank.hp += 3000;
     }
     playUpgradeSound();
+    syncShopState();
     spawnFloatingText(eng.player.x, eng.player.y - 40, `🛡️ TANK ${component.toUpperCase()} LV${currentLvl + 1}!`, '#7ee787', 22);
-  }, [spawnFloatingText]);
+  }, [spawnFloatingText, syncShopState]);
 
   const handleBuyShopItem = useCallback((type: string, cost: number, payload?: any) => {
     const atoms = engineRef.current.atoms;
@@ -1376,12 +1392,14 @@ export default function App() {
       engineRef.current.atoms -= cost;
       engineRef.current.base.hasRevivePod = true;
       playUpgradeSound();
+      syncShopState();
       spawnFloatingText(player.x, player.y - 50, '⚕️ RESURRECTION POD ONLINE!', '#83d3e1', 22);
       return;
     }
 
     engineRef.current.atoms -= cost;
     playUpgradeSound();
+    syncShopState();
 
     if (type === 'armor') {
       player.armorLevel = Math.min(5, (payload as number) || (player.armorLevel + 1));
@@ -1434,7 +1452,7 @@ export default function App() {
       const upName = (UPGRADES as Record<string, any>)[payload]?.name || 'CORE';
       spawnFloatingText(player.x, player.y - 40, `${upName} UPGRADED!`, '#c6ff6b', 20);
     }
-  }, [lootWeapon, spawnFloatingText]);
+  }, [lootWeapon, spawnFloatingText, syncShopState]);
 
   // Upgrade Base Sanctuary
   const handleUpgradeBase = useCallback(() => {
@@ -1447,9 +1465,10 @@ export default function App() {
     engineRef.current.atoms -= def.cost;
     upgradeBase(base);
     playUpgradeSound();
+    syncShopState();
     spawnFloatingText(base.x, base.y - 60, `🏰 BASE UPGRADED: ${def.name.toUpperCase()}!`, '#7ee787', 24);
     showAlert(`🏰 BASE UPGRADED TO LEVEL ${base.level}`);
-  }, [showAlert, spawnFloatingText]);
+  }, [showAlert, spawnFloatingText, syncShopState]);
 
   // Recruit Soldier
   const handleRecruitSoldier = useCallback((type: SoldierType) => {
@@ -1473,8 +1492,9 @@ export default function App() {
     const s = createSoldier(type, base.x, base.y);
     engineRef.current.soldiers.push(s);
     playUpgradeSound();
+    syncShopState();
     spawnFloatingText(base.x, base.y - 50, `🎖️ RECRUITED ${s.name}!`, s.color, 22);
-  }, [spawnFloatingText]);
+  }, [spawnFloatingText, syncShopState]);
 
   // Upgrade Soldier (Level 1 -> MAX_SOLDIER_LEVEL)
   const handleUpgradeSoldier = useCallback((id: string) => {
@@ -1490,8 +1510,9 @@ export default function App() {
     engineRef.current.atoms -= cost;
     upgradeSoldier(s);
     playUpgradeSound();
+    syncShopState();
     spawnFloatingText(s.x, s.y - 50, `🌟 ${s.name} UPGRADED TO LV${s.level}!`, s.color, 22);
-  }, [spawnFloatingText]);
+  }, [spawnFloatingText, syncShopState]);
 
   // Trigger Superpower directly
   const handleTriggerSuperpower = useCallback((id: string) => {

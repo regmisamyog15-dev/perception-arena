@@ -41,6 +41,7 @@ export default function StartScreen({ highScore, hasSavedGame, onStart, onContin
       <div className="w-full max-w-3xl">
         {/* Title banner */}
         <div className="relative text-center mb-4">
+          <div className="title-glow-bg" />
           <h1 className="font-display text-4xl md:text-6xl font-black text-[#ff4d5e] neon-text-red tracking-wider">
             PERCEPTION ARENA
           </h1>
@@ -207,7 +208,7 @@ export default function StartScreen({ highScore, hasSavedGame, onStart, onContin
               ▶ CONTINUE SAVED RUN
             </button>
           )}
-          <button onClick={onStart} className="btn-arcade">
+          <button onClick={onStart} className={hasSavedGame ? 'btn-arcade-outline' : 'btn-arcade'}>
             {hasSavedGame ? 'START NEW GAME' : 'ENTER SANCTUARY & START COMBAT'}
           </button>
         </div>

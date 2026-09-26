@@ -51,6 +51,17 @@ export const ShopModal: React.FC<Props> = ({
   onClose,
 }) => {
   const [tab, setTab] = React.useState<'base' | 'soldiers' | 'repair' | 'tank' | 'superpowers' | 'upgrades' | 'gear' | 'armor'>('repair');
+  const [balanceFx, setBalanceFx] = React.useState('');
+  const prevAtomsRef = React.useRef(atoms);
+
+  React.useEffect(() => {
+    if (atoms !== prevAtomsRef.current) {
+      setBalanceFx(atoms < prevAtomsRef.current ? 'balance-pulse balance-flash-spend' : 'balance-pulse');
+      prevAtomsRef.current = atoms;
+      const t = setTimeout(() => setBalanceFx(''), 500);
+      return () => clearTimeout(t);
+    }
+  }, [atoms]);
 
   const currentBaseDef = BASE_LEVELS[base.level] || BASE_LEVELS[1];
 
@@ -63,7 +74,9 @@ export const ShopModal: React.FC<Props> = ({
               MILITARY COMMAND POST & BARRACKS
             </h2>
             <div className="flex flex-wrap items-center gap-3">
-              <span className="text-sm text-[#c6ff6b] font-bold">Balance: {atoms} ⚛ Zomb Atoms</span>
+              <span className={`inline-block text-sm text-[#c6ff6b] font-bold px-2.5 py-1 rounded-lg bg-[#c6ff6b]/10 border border-[#c6ff6b]/30 ${balanceFx}`}>
+                Balance: {atoms} ⚛ Zomb Atoms
+              </span>
               <span className="text-xs text-[#83d3e1] font-mono bg-white/5 px-2 py-0.5 rounded">
                 Base Lv{base.level} • Squad: {soldiers.length}/{base.maxSoldiers} Max
               </span>

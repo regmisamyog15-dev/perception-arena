@@ -138,6 +138,65 @@
   transform: translateY(1px);
 }
 
+.btn-arcade-outline {
+  background: transparent;
+  color: #ffcf5c;
+  font-family: 'Anybody', sans-serif;
+  font-size: 15px;
+  font-weight: 900;
+  padding: 10px 26px;
+  border: 2px solid #ffcf5c;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.btn-arcade-outline:hover {
+  background: rgba(255, 207, 92, 0.12);
+  transform: translateY(-2px);
+  box-shadow: 0 0 20px rgba(255, 207, 92, 0.4);
+}
+
+.btn-arcade-outline:active {
+  transform: translateY(1px);
+}
+
+@keyframes balancePulse {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+.balance-pulse {
+  animation: balancePulse 0.32s ease-out;
+}
+
+@keyframes balanceFlashSpend {
+  0% { color: #ff8f8f; }
+  100% { color: #c6ff6b; }
+}
+
+.balance-flash-spend {
+  animation: balanceFlashSpend 0.5s ease-out;
+}
+
+@keyframes titleGlowPulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.title-glow-bg {
+  position: absolute;
+  inset: -30px -10px auto -10px;
+  height: 140px;
+  background: radial-gradient(ellipse at center, rgba(255, 77, 94, 0.35) 0%, rgba(255, 77, 94, 0) 70%);
+  animation: titleGlowPulse 3.5s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
 #vignette {
   position: absolute;
   inset: 0;
