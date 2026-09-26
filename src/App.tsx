@@ -22,6 +22,7 @@ import {
   Superpower,
   SoldierType,
   EliteGuard,
+  BossOrb,
 } from './types/game';
 import {
   WORLD_W,
@@ -282,6 +283,7 @@ export default function App() {
     floaters: [] as Floater[],
     airdrops: [] as Airdrop[],
     cracks: [] as Crack[],
+    bossOrbs: [] as BossOrb[],
     decals: [] as Decal[],
     boxes: [] as Box[],
     turrets: [] as Turret[],
@@ -670,7 +672,7 @@ export default function App() {
       r: 42,
       hp: Math.round(1800 * hpMul),
       hpMax: Math.round(1800 * hpMul),
-      baseSpeed: 2.2,
+      baseSpeed: 3.0,
       color: skin.color,
       dead: false,
       state: 'entering',
@@ -682,7 +684,7 @@ export default function App() {
       squash: 1,
       moveIdx: 0,
       roarBoostUntil: 0,
-      cycleMs: Math.max(1800, 3200 - wave * 100),
+      cycleMs: Math.max(1200, 2400 - wave * 100),
       isGuardian: guardianDoorIndex !== undefined,
       isFinal,
       doorIndex: guardianDoorIndex,
@@ -1103,7 +1105,7 @@ export default function App() {
       r: 44,
       hp: Math.round(2500 * hpMul),
       hpMax: Math.round(2500 * hpMul),
-      baseSpeed: 2.5,
+      baseSpeed: 3.3,
       color: skin.color,
       dead: false,
       state: 'entering',
@@ -1115,7 +1117,7 @@ export default function App() {
       squash: 1,
       moveIdx: 0,
       roarBoostUntil: 0,
-      cycleMs: Math.max(1600, 3000 - doorIndex * 120),
+      cycleMs: Math.max(1100, 2200 - doorIndex * 120),
       isGuardian: true,
       isFinal: doorIndex === 10,
       doorIndex,
@@ -1987,6 +1989,7 @@ export default function App() {
             eng.shockwaves,
             eng.cracks,
             eng.bullets,
+            eng.bossOrbs,
             dt,
             time,
             eng.wave,
@@ -2097,6 +2100,26 @@ export default function App() {
               }
             }
 
+            // Bullet hitting a Boss Orb — shoot it down before it connects
+            if (!hit) {
+              for (let oi = eng.bossOrbs.length - 1; oi >= 0; oi--) {
+                const orb = eng.bossOrbs[oi];
+                const dOrb = distToSegment(orb.x, orb.y, prevX, prevY, b.x, b.y);
+                if (dOrb < orb.r + 8) {
+                  orb.hp -= b.dmg;
+                  createParticles(orb.x, orb.y, '#ffd166', 5, 5);
+                  if (orb.hp <= 0) {
+                    createParticles(orb.x, orb.y, '#ffd166', 30, 10, 450);
+                    addScreenShake(10);
+                    spawnFloatingText(orb.x, orb.y - 30, 'ORB DESTROYED!', '#ffd166', 16);
+                    eng.bossOrbs.splice(oi, 1);
+                  }
+                  hit = true;
+                  break;
+                }
+              }
+            }
+
             // Bullet hitting Elite Guards
             if (!hit) {
               for (const eg of eng.eliteGuards) {
@@ -2159,6 +2182,26 @@ export default function App() {
               eng.bullets.splice(i, 1);
               continue;
             }
+          }
+        }
+
+        // Update Boss Orbs — big slow dodgeable projectiles
+        for (let i = eng.bossOrbs.length - 1; i >= 0; i--) {
+          const orb = eng.bossOrbs[i];
+          orb.x += orb.vx;
+          orb.y += orb.vy;
+          orb.life -= dt;
+          if (orb.life <= 0) {
+            eng.bossOrbs.splice(i, 1);
+            continue;
+          }
+          if (Math.hypot(player.x - orb.x, player.y - orb.y) < player.r + orb.r && !tank.mounted) {
+            applyPlayerDamage(orb.dmg);
+            flashVignette();
+            spawnFloatingText(player.x, player.y - 40, `-${orb.dmg} ORB HIT!`, '#ffd166', 22);
+            createParticles(orb.x, orb.y, '#ffd166', 26, 9, 400);
+            addScreenShake(14);
+            eng.bossOrbs.splice(i, 1);
           }
         }
 
@@ -2293,7 +2336,8 @@ export default function App() {
             eng.superpowers,
             eng.eliteGuards,
             eng.currentArenaId,
-            eng.beaconEjectTimer
+            eng.beaconEjectTimer,
+            eng.bossOrbs
           );
         }
       }
@@ -2522,6 +2566,7 @@ export default function App() {
     engineRef.current.floaters = [];
     engineRef.current.airdrops = [];
     engineRef.current.cracks = [];
+    engineRef.current.bossOrbs = [];
     engineRef.current.decals = [];
     engineRef.current.boxes = [];
     engineRef.current.turrets = [];

@@ -4,6 +4,20 @@ import { BossSkin, WeaponDef, MeleeDef } from '../types/game';
 export const WORLD_W = 7200;
 export const WORLD_H = 5400;
 
+// Charge attack lane length — shared by the AI (how far the boss actually
+// travels) and the renderer (how long the red danger-lane telegraph is
+// drawn), so the boss always covers exactly the distance the warning shows.
+export const CHARGE_LANE_LEN = 950;
+
+// Universal boss mechanics — apply to every boss regardless of gimmick.
+export const PORTAL_INTERVAL_MS = 13000; // how often a pair of summon portals opens
+export const PORTAL_INTERVAL_ENRAGED_MS = 9500;
+export const ORB_INTERVAL_MS = 60000; // big yellow orb volley, once a minute
+export const ORB_INTERVAL_ENRAGED_MS = 45000;
+export const ORB_SPEED = 2.6; // px/frame — well under player.speed (6.2), so it's a real dodge
+export const ORB_HP = 55; // how much player bullet damage it takes to shoot down
+export const ORB_DMG_MULT = 1.0;
+
 export const WEAPONS: Record<string, WeaponDef> = {
   pistol: { id: 'pistol', name: 'Pistol', icon: '🔫', iconImg: '/sprites/icons/guns/Icon29_01.png', dmg: 28, rate: 220, spread: 0.04, speed: 20, infinite: true, auto: false, type: 'gun', repairCost: 0 },
   smg: { id: 'smg', name: 'SMG', icon: '📠', iconImg: '/sprites/icons/guns/Icon29_09.png', dmg: 16, rate: 75, spread: 0.10, speed: 22, durMax: 260, auto: true, type: 'gun', repairCost: 20 },

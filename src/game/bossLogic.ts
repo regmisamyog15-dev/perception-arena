@@ -1,5 +1,9 @@
-import { Boss, PlayerState, Shockwave, Crack, Tank, Bullet } from '../types/game';
-import { BOSS_TELEGRAPHS, BOSS_QUOTES } from './constants';
+import { Boss, PlayerState, Shockwave, Crack, Tank, Bullet, BossOrb } from '../types/game';
+import {
+  BOSS_TELEGRAPHS, BOSS_QUOTES, CHARGE_LANE_LEN,
+  PORTAL_INTERVAL_MS, PORTAL_INTERVAL_ENRAGED_MS,
+  ORB_INTERVAL_MS, ORB_INTERVAL_ENRAGED_MS, ORB_SPEED, ORB_HP, ORB_DMG_MULT,
+} from './constants';
 import { playExplosionSound, playBossRoarSound, playAlertStinger } from '../audio/sound';
 
 export function updateBossAI(
@@ -9,6 +13,7 @@ export function updateBossAI(
   shockwaves: Shockwave[],
   cracks: Crack[],
   bullets: Bullet[],
+  bossOrbs: BossOrb[],
   dt: number,
   now: number,
   wave: number,
@@ -65,6 +70,63 @@ export function updateBossAI(
     boss.campAnchorX = player.x;
     boss.campAnchorY = player.y;
     boss.campCheckAt = now + 3000;
+  }
+
+  // =====================================================
+  // UNIVERSAL PORTAL SUMMONS — every boss, on a clock, independent of
+  // its gimmick or move rotation. A pair of portals opens at telegraphed
+  // spots near (but not on top of) the player, count down while pulsing
+  // (the existing Crack visuals), then birth a zombie each when they pop.
+  // =====================================================
+  const portalInterval = boss.enraged ? PORTAL_INTERVAL_ENRAGED_MS : PORTAL_INTERVAL_MS;
+  if (boss.portalCheckAt === undefined) {
+    boss.portalCheckAt = now + portalInterval;
+  } else if (now >= boss.portalCheckAt) {
+    boss.portalCheckAt = now + portalInterval;
+    addScreenShake(8);
+    spawnFloater(boss.x, boss.y - 100, '🌀 PORTALS OPENING!', '#b98bff', 20);
+    const types: Array<'runner' | 'shambler'> = ['runner', 'shambler'];
+    for (let i = 0; i < 2; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const dist = 220 + Math.random() * 260; // near the player, never on top of them
+      const px = Math.max(bounds.minX + 60, Math.min(bounds.maxX - 60, player.x + Math.cos(ang) * dist));
+      const py = Math.max(bounds.minY + 60, Math.min(bounds.maxY - 60, player.y + Math.sin(ang) * dist));
+      cracks.push({
+        id: Math.random().toString(),
+        x: px,
+        y: py,
+        time: boss.enraged ? 950 : 1200,
+        type: types[i],
+      });
+    }
+  }
+
+  // =====================================================
+  // UNIVERSAL YELLOW ORB VOLLEY — every boss, roughly once a minute.
+  // A big, slow, straight-line projectile — easy to read and dodge on
+  // foot, but it can also be shot out of the air with regular bullets.
+  // =====================================================
+  const orbInterval = boss.enraged ? ORB_INTERVAL_ENRAGED_MS : ORB_INTERVAL_MS;
+  if (boss.orbCheckAt === undefined) {
+    boss.orbCheckAt = now + orbInterval;
+  } else if (now >= boss.orbCheckAt) {
+    boss.orbCheckAt = now + orbInterval;
+    const ang = Math.atan2(player.y - boss.y, player.x - boss.x);
+    spawnFloater(boss.x, boss.y - 130, '🟡 ORB INCOMING — SHOOT OR DODGE!', '#ffd166', 20);
+    addScreenShake(10);
+    createParticles(boss.x, boss.y, '#ffd166', 20, 8, 400);
+    bossOrbs.push({
+      id: Math.random().toString(),
+      x: boss.x,
+      y: boss.y - boss.height,
+      vx: Math.cos(ang) * ORB_SPEED,
+      vy: Math.sin(ang) * ORB_SPEED,
+      r: 34,
+      hp: ORB_HP,
+      hpMax: ORB_HP,
+      dmg: Math.round(50 * dmgMul * ORB_DMG_MULT),
+      life: 8000,
+    });
   }
 
   // =====================================================
@@ -431,8 +493,12 @@ export function updateBossAI(
     boss.squash = 0.8;
     if (boss.stateTimer <= 0) {
       boss.state = 'charging';
-      boss.stateTimer = boss.enraged ? 650 : 550;
+      // Safety cap only — the real end condition is covering the full
+      // telegraphed lane length below, so this never cuts a charge short.
+      boss.stateTimer = 2500;
       boss.chargeAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+      boss.chargeDistTraveled = 0;
+      boss.chargeHitPlayer = false;
     }
   } else if (boss.state === 'charging') {
     boss.squash = 1.15;
@@ -440,22 +506,37 @@ export function updateBossAI(
     boss.x += Math.cos(boss.chargeAng || 0) * chargeSpeed;
     boss.y += Math.sin(boss.chargeAng || 0) * chargeSpeed;
     boss.facingAng = boss.chargeAng || 0;
+    boss.chargeDistTraveled = (boss.chargeDistTraveled || 0) + chargeSpeed;
 
     createParticles(boss.x, boss.y, '#ff4d5e', 3, 5, 200);
 
-    if (Math.hypot(player.x - boss.x, player.y - boss.y) < boss.r + player.r + 15 && !tank.mounted) {
-      const chargeDmg = 48 * (boss.skin.chargeMult || 1) * dmgMul * (dt / 1000) * 3.5;
-      applyPlayerDamage(chargeDmg);
-      flashVignette();
-      // Push Player away from charge vector
-      player.pushVx = Math.cos(boss.chargeAng || 0) * 12;
-      player.pushVy = Math.sin(boss.chargeAng || 0) * 12;
+    // Hit-check across the FULL width of the red lane (same geometry it's
+    // drawn with) rather than a tiny circle around the boss, and it lands
+    // once, for real damage — not shredded into near-zero per-frame ticks.
+    if (!boss.chargeHitPlayer && !tank.mounted) {
+      const ang = boss.chargeAng || 0;
+      const dx = player.x - boss.x;
+      const dy = player.y - boss.y;
+      const forward = dx * Math.cos(ang) + dy * Math.sin(ang);
+      const lateral = Math.abs(dx * -Math.sin(ang) + dy * Math.cos(ang));
+      const laneHalfWidth = boss.r + player.r + 15;
+      if (forward > -boss.r && forward < laneHalfWidth * 2 && lateral < laneHalfWidth) {
+        const chargeDmg = Math.round(70 * (boss.skin.chargeMult || 1) * dmgMul);
+        applyPlayerDamage(chargeDmg);
+        flashVignette();
+        spawnFloater(player.x, player.y - 40, `-${chargeDmg} RAMMED!`, '#ff4d5e', 22);
+        player.pushVx = Math.cos(ang) * 16;
+        player.pushVy = Math.sin(ang) * 16;
+        boss.chargeHitPlayer = true;
+      }
     }
 
     boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, boss.x));
     boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, boss.y));
 
-    if (boss.stateTimer <= 0) {
+    // Travel the full telegraphed distance (matches the red lane length the
+    // player was shown) instead of stopping early on an arbitrary timer.
+    if ((boss.chargeDistTraveled || 0) >= CHARGE_LANE_LEN || boss.stateTimer <= 0) {
       boss.state = 'chargeRecover';
       boss.stateTimer = 450;
       createParticles(boss.x, boss.y, '#999', 20, 6);

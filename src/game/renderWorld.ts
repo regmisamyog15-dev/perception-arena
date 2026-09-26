@@ -19,8 +19,9 @@ import {
   Soldier,
   Superpower,
   EliteGuard,
+  BossOrb,
 } from '../types/game';
-import { WORLD_W, WORLD_H } from './constants';
+import { WORLD_W, WORLD_H, CHARGE_LANE_LEN } from './constants';
 import { drawBossSprite, drawZombieSprite, drawSoldierSprite } from './sprites';
 
 function clamp255(v: number): number {
@@ -94,7 +95,8 @@ export function renderGameScene(
   superpowers: Record<string, Superpower>,
   eliteGuards?: EliteGuard[],
   currentArenaId?: number | null,
-  beaconEjectTimer?: number
+  beaconEjectTimer?: number,
+  bossOrbs?: BossOrb[]
 ) {
   ctx.clearRect(0, 0, cw, ch);
 
@@ -672,6 +674,34 @@ export function renderGameScene(
     }
   }
 
+  // Boss Orbs — big, slow, dodgeable projectiles that can also be shot down
+  for (const orb of (bossOrbs || [])) {
+    const pulse = 1 + Math.sin(performance.now() / 120) * 0.08;
+    const r = orb.r * pulse;
+    ctx.save();
+    ctx.shadowColor = '#ffd166';
+    ctx.shadowBlur = 22;
+    ctx.fillStyle = '#ffd166';
+    ctx.beginPath();
+    ctx.arc(orb.x, orb.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#ff8c00';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(orb.x, orb.y, r * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    // HP bar — shows the player it can be shot down before it arrives
+    if (orb.hp < orb.hpMax) {
+      const barW = 46;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(orb.x - barW / 2, orb.y - r - 14, barW, 5);
+      ctx.fillStyle = '#ffd166';
+      ctx.fillRect(orb.x - barW / 2, orb.y - r - 14, barW * Math.max(0, orb.hp / orb.hpMax), 5);
+    }
+  }
+
   // Boxes
   for (const bx of boxes) {
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
@@ -1033,7 +1063,7 @@ export function renderGameScene(
     // is about to ram, the instant it locks on. This is the dodge window: get
     // out of the box before "charging" starts, or eat the hit.
     if ((boss.state === 'chargeWindup' || boss.state === 'charging') && boss.chargeAng !== undefined) {
-      const laneLen = 950;
+      const laneLen = CHARGE_LANE_LEN;
       const laneHalfWidth = boss.r + player.r + 15;
       const flicker = boss.state === 'chargeWindup' ? 0.45 + Math.sin(performance.now() / 90) * 0.25 : 0.85;
       ctx.save();

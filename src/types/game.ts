@@ -182,6 +182,29 @@ export interface Boss {
   campAnchorY?: number;
   campCheckAt?: number;  // next timestamp to re-check player movement
   campPunishCd?: number; // cooldown so the punish can't fire back-to-back
+  // Universal charge fix — travel the full telegraphed lane, hit once for real damage
+  chargeDistTraveled?: number;
+  chargeHitPlayer?: boolean;
+  // Universal portal summon system — every boss, independent of gimmick/moveset
+  portalCheckAt?: number;
+  // Universal yellow orb volley — every boss, independent of gimmick/moveset
+  orbCheckAt?: number;
+}
+
+// Big slow projectile fired by any boss roughly once a minute. Travels in a
+// straight line (no homing) so it's readable and dodgeable, and can be shot
+// out of the air by the player's own bullets before it connects.
+export interface BossOrb {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  r: number;
+  hp: number;
+  hpMax: number;
+  dmg: number;
+  life: number;
 }
 
 export interface EliteGuard {
