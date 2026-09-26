@@ -74,21 +74,22 @@ export function updateBossAI(
 
   // =====================================================
   // UNIVERSAL PORTAL SUMMONS — every boss, on a clock, independent of
-  // its gimmick or move rotation. A pair of portals opens at telegraphed
-  // spots near (but not on top of) the player, count down while pulsing
-  // (the existing Crack visuals), then birth a zombie each when they pop.
+  // its gimmick or move rotation. Portals open in a ring around (but never
+  // on top of) the player, count down while pulsing (the existing Crack
+  // visuals), then each births a giant ztank — the same heavy unit used
+  // in the final phases — so a portal wave reads as a real escalation.
   // =====================================================
   const portalInterval = boss.enraged ? PORTAL_INTERVAL_ENRAGED_MS : PORTAL_INTERVAL_MS;
   if (boss.portalCheckAt === undefined) {
     boss.portalCheckAt = now + portalInterval;
   } else if (now >= boss.portalCheckAt) {
     boss.portalCheckAt = now + portalInterval;
-    addScreenShake(8);
-    spawnFloater(boss.x, boss.y - 100, '🌀 PORTALS OPENING!', '#b98bff', 20);
-    const types: Array<'runner' | 'shambler'> = ['runner', 'shambler'];
-    for (let i = 0; i < 2; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const dist = 220 + Math.random() * 260; // near the player, never on top of them
+    addScreenShake(14);
+    spawnFloater(boss.x, boss.y - 100, '🌀 5 PORTALS UNLEASH GIANTS!', '#b98bff', 20);
+    const portalCount = 5;
+    for (let i = 0; i < portalCount; i++) {
+      const ang = (i / portalCount) * Math.PI * 2 + Math.random() * 0.3;
+      const dist = 300 + Math.random() * 140; // wider ring — ztanks hit harder & take up more space
       const px = Math.max(bounds.minX + 60, Math.min(bounds.maxX - 60, player.x + Math.cos(ang) * dist));
       const py = Math.max(bounds.minY + 60, Math.min(bounds.maxY - 60, player.y + Math.sin(ang) * dist));
       cracks.push({
@@ -96,7 +97,7 @@ export function updateBossAI(
         x: px,
         y: py,
         time: boss.enraged ? 950 : 1200,
-        type: types[i],
+        type: 'ztank',
       });
     }
   }
@@ -588,18 +589,21 @@ export function updateBossAI(
     if (boss.stateTimer <= 0) {
       playBossRoarSound();
       addScreenShake(18);
-      for (let i = 0; i < 2; i++) {
-        const a = (i / 2) * Math.PI * 2 + Math.random() * 0.5;
-        const cx = boss.x + Math.cos(a) * 200;
-        const cy = boss.y + Math.sin(a) * 200;
+      const portalCount = 5;
+      for (let i = 0; i < portalCount; i++) {
+        const a = (i / portalCount) * Math.PI * 2 + Math.random() * 0.3;
+        const dist = 300 + Math.random() * 140;
+        const cx = player.x + Math.cos(a) * dist;
+        const cy = player.y + Math.sin(a) * dist;
         cracks.push({
           id: Math.random().toString(),
           x: Math.max(bounds.minX + 50, Math.min(bounds.maxX - 50, cx)),
           y: Math.max(bounds.minY + 50, Math.min(bounds.maxY - 50, cy)),
           time: 1200,
-          type: i === 0 ? 'runner' : 'shambler',
+          type: 'ztank',
         });
       }
+      spawnFloater(boss.x, boss.y - 100, `🌀 ${portalCount} PORTALS UNLEASH GIANTS!`, '#b98bff', 20);
       boss.state = 'chasing';
       boss.stateTimer = boss.cycleMs;
     }
