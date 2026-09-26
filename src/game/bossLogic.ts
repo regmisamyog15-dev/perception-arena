@@ -41,6 +41,33 @@ export function updateBossAI(
   boss.squash += (1 - boss.squash) * Math.min(1, dt / 120);
 
   // =====================================================
+  // UNIVERSAL ANTI-CAMPING PUNISH — applies to every boss regardless of
+  // gimmick. Every 3s, check how far the player has actually moved; if
+  // they've been parked in one spot (classic "circle-strafe and spam SMG"),
+  // force-interrupt whatever the boss is doing with a short-windup charge
+  // aimed straight at them. On a cooldown so it can't chain every 3s.
+  // =====================================================
+  if (boss.campCheckAt === undefined) {
+    boss.campAnchorX = player.x;
+    boss.campAnchorY = player.y;
+    boss.campCheckAt = now + 3000;
+  } else if (now >= boss.campCheckAt) {
+    const moved = Math.hypot(player.x - (boss.campAnchorX ?? player.x), player.y - (boss.campAnchorY ?? player.y));
+    const cdReady = boss.campPunishCd === undefined || now >= boss.campPunishCd;
+    if (moved < 80 && boss.state === 'chasing' && cdReady) {
+      boss.state = 'chargeWindup';
+      boss.stateTimer = 300;
+      boss.chargeAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+      boss.campPunishCd = now + 6000;
+      addScreenShake(10);
+      spawnFloater(boss.x, boss.y - 100, '⚠️ TOO COMFORTABLE — RUSH INCOMING!', '#ff4d5e', 20);
+    }
+    boss.campAnchorX = player.x;
+    boss.campAnchorY = player.y;
+    boss.campCheckAt = now + 3000;
+  }
+
+  // =====================================================
   // PER-BOSS GIMMICK SYSTEM — differentiated mechanics
   // =====================================================
   const gimmick = boss.skin.gimmick;
@@ -204,7 +231,7 @@ export function updateBossAI(
     if (boss.stateTimer <= 0) {
       const moves = [...boss.skin.moves];
       if (boss.enraged) {
-        moves.push('solarBeam', 'pushSlam', 'laser', 'charge');
+        moves.push('solarBeam', 'pushSlam', 'laser', 'charge', 'spikeField');
       }
 
       boss.moveIdx = (boss.moveIdx + 1) % (moves.length + 1);
@@ -261,6 +288,16 @@ export function updateBossAI(
           boss.state = 'summonWindup';
           boss.stateTimer = 750;
           spawnFloater(boss.x, boss.y - 100, '💀 SUMMONING HORDE', '#b98bff', 20);
+        } else if (m === 'spikeField') {
+          boss.state = 'spikeField';
+          boss.spikeBurstsLeft = boss.enraged ? 4 : 3;
+          boss.spikeBurstDelay = boss.enraged ? 650 : 850;
+          boss.spikeX = player.x;
+          boss.spikeY = player.y;
+          boss.spikeBurstAt = now + (boss.spikeBurstDelay || 850);
+          boss.stateTimer = (boss.spikeBurstsLeft + 1) * (boss.spikeBurstDelay || 850);
+          playBossRoarSound();
+          spawnFloater(boss.x, boss.y - 100, '🌋 GROUND SPIKES — KEEP MOVING!', '#f4a261', 20);
         }
       }
     }
@@ -574,6 +611,36 @@ export function updateBossAI(
     if (boss.stateTimer <= 0) {
       boss.state = 'chasing';
       boss.stateTimer = boss.cycleMs;
+    }
+  } else if (boss.state === 'spikeField') {
+    // Sequential ground-eruption attack: each burst telegraphs at the
+    // player's position when it's SET, then erupts a fixed delay later.
+    // Surviving it means actually relocating between bursts — standing in
+    // one spot spraying bullets gets you hit by every single eruption.
+    if (now >= (boss.spikeBurstAt || 0)) {
+      const sx = boss.spikeX ?? boss.x;
+      const sy = boss.spikeY ?? boss.y;
+      const dist = Math.hypot(player.x - sx, player.y - sy);
+      if (dist < 95 && !tank.mounted) {
+        const spikeDmg = Math.round(46 * dmgMul);
+        applyPlayerDamage(spikeDmg);
+        flashVignette();
+        spawnFloater(player.x, player.y - 40, `-${spikeDmg} SPIKE!`, '#f4a261', 20);
+      }
+      addScreenShake(10);
+      addDecal(sx, sy, 70);
+      createParticles(sx, sy, '#f4a261', 22, 8, 350);
+      playExplosionSound();
+
+      boss.spikeBurstsLeft = (boss.spikeBurstsLeft || 1) - 1;
+      if (boss.spikeBurstsLeft > 0) {
+        boss.spikeX = player.x;
+        boss.spikeY = player.y;
+        boss.spikeBurstAt = now + (boss.spikeBurstDelay || 850);
+      } else {
+        boss.state = 'chasing';
+        boss.stateTimer = boss.cycleMs;
+      }
     }
   }
 }

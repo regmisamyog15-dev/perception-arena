@@ -131,13 +131,19 @@ export default function StartScreen({ highScore, hasSavedGame, onStart, onContin
                 <ul className="list-disc pl-5 space-y-1.5">
                   <li>A <strong className="text-[#ff4d5e]">red lane</strong> means a charge is locked onto that exact
                     path — step outside the box before it fires.</li>
+                  <li>A <strong className="text-[#f4a261]">dashed orange circle</strong> filling in is a ground-spike
+                    eruption about to land where you're standing — it will re-target your position after each hit, so
+                    keep relocating between bursts instead of tanking the whole sequence.</li>
                   <li>A <strong className="text-[#b98bff]">glowing portal</strong> on the ground is a summon in
                     progress — kill it or run before it finishes ("EMERGING") or a fresh zombie spawns already
                     aggroed on you.</li>
                   <li>Bosses take <strong className="text-[#7ee787]">extra damage</strong> while recovering from a
-                    charge, a trip, or a landing — that's your punish window.</li>
+                    charge, a trip, or a landing — that's your punish window (shown by a pulsing green ring).</li>
                   <li>Bosses take <strong className="text-gray-400">reduced damage</strong> mid-attack (charging,
-                    spinning, beaming) — standing still and spraying through an attack is no longer the optimal play.</li>
+                    spinning, beaming — shown by a dull metallic tint) — standing still and spraying through an
+                    attack is no longer the optimal play.</li>
+                  <li>Stand still too long and every boss will <strong className="text-[#ff4d5e]">force a fast
+                    charge</strong> straight at you — camping in one spot gets punished, not rewarded.</li>
                   <li>Below 40% HP every boss enrages: faster, angrier, shorter attack cooldowns.</li>
                 </ul>
               </div>

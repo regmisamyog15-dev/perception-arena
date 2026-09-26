@@ -137,7 +137,7 @@ export interface Boss {
   baseSpeed: number;
   color: string;
   dead: boolean;
-  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam';
+  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField';
   stateTimer: number;
   targetAng: number;
   facingAng: number;
@@ -171,6 +171,17 @@ export interface Boss {
   reflectActive?: boolean;     // larry mirror active
   wallBounceWarning?: boolean; // bouncer wall proximity warning
   beaconStandTimer?: number;   // arena center beacon eject timer (per boss)
+  // Spike Field — sequential telegraphed ground-eruption attack
+  spikeBurstsLeft?: number;
+  spikeX?: number;
+  spikeY?: number;
+  spikeBurstAt?: number;    // timestamp (ms) of next eruption
+  spikeBurstDelay?: number; // ms of warning before that eruption, for render progress
+  // Universal anti-camping punish — tracked per boss
+  campAnchorX?: number;
+  campAnchorY?: number;
+  campCheckAt?: number;  // next timestamp to re-check player movement
+  campPunishCd?: number; // cooldown so the punish can't fire back-to-back
 }
 
 export interface EliteGuard {

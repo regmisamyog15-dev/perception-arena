@@ -614,6 +614,28 @@ export function renderGameScene(
     ctx.restore();
   }
 
+  // Spike Field warning — a growing red danger circle at the next ground
+  // eruption point, filling in as the burst approaches
+  if (boss && boss.state === 'spikeField' && boss.spikeX !== undefined && boss.spikeY !== undefined) {
+    const delay = boss.spikeBurstDelay || 850;
+    const remaining = Math.max(0, (boss.spikeBurstAt || 0) - performance.now());
+    const progress = 1 - Math.max(0, Math.min(1, remaining / delay));
+    ctx.save();
+    ctx.strokeStyle = '#f4a261';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.arc(boss.spikeX, boss.spikeY, 95, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.25 + progress * 0.45;
+    ctx.fillStyle = '#f4a261';
+    ctx.beginPath();
+    ctx.arc(boss.spikeX, boss.spikeY, 95 * progress, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // Expanding Shockwaves
   for (const sw of shockwaves) {
     const alpha = Math.max(0, 1 - sw.r / sw.maxR);
@@ -1051,7 +1073,7 @@ export function renderGameScene(
     const attackStates = new Set([
       'chargeWindup', 'charging', 'anticipate', 'rising', 'airborne', 'landing',
       'solarWindup', 'solarBeam', 'laserWindup', 'laserSweep', 'fireballWindup',
-      'spinWindup', 'spinning', 'teleportOut', 'teleportStrike', 'summonWindup', 'roar',
+      'spinWindup', 'spinning', 'teleportOut', 'teleportStrike', 'summonWindup', 'roar', 'spikeField',
     ]);
     const bossAnim: 'idle' | 'walk' | 'attack' = attackStates.has(boss.state)
       ? 'attack'
