@@ -957,7 +957,10 @@ export default function App() {
     const now = performance.now();
     const fireRate = activeWpn.rate || (activeWpn as any).fireRate || 250;
     const rapidBonus = 1 - (player.upgrades.rapidFire || 0) * 0.12;
-    if (now - player.lastShot < fireRate * rapidBonus) return;
+    // Alpha Watchtower vantage point — 1.6x faster fire rate while standing on it
+    const onAlphaTower = player.onTowerId === 'tower-center-north';
+    const alphaTowerMul = onAlphaTower ? 1 / 1.6 : 1;
+    if (now - player.lastShot < fireRate * rapidBonus * alphaTowerMul) return;
 
     if (activeWpn.ammoBased && activeWpn.ammo !== undefined && activeWpn.ammo <= 0) return;
     if (!activeWpn.infinite && activeWpn.dur !== undefined && activeWpn.dur <= 0) return;
