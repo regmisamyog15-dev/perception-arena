@@ -530,7 +530,7 @@ export const ShopModal: React.FC<Props> = ({
             <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex justify-between items-center">
               <div className="text-xs text-gray-300">
                 <span className="font-bold text-white">Squad Barracks ({soldiers.length}/{base.maxSoldiers} Max)</span>:
-                Recruit up to 7 soldiers with distinct weapons & superpowers. Soldiers fight hordes with you, level up, and respawn inside the Base!
+                Recruit up to 3 soldiers — Jack, Brick, and Zeus — with distinct weapons & superpowers. Soldiers fight hordes with you, level up, and heal in the base!
               </div>
             </div>
 
@@ -606,9 +606,9 @@ export const ShopModal: React.FC<Props> = ({
             )}
 
             {/* Catalog */}
-            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Recruitment Barracks (Max 7 Soldiers)</h4>
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Recruitment Barracks (Max 3 Soldiers)</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {(Object.keys(SOLDIER_DEFINITIONS) as SoldierType[]).map((type) => {
+              {(['rifleman', 'shotgunner', 'thunder'] as SoldierType[]).map((type) => {
                 const def = SOLDIER_DEFINITIONS[type];
                 const isRecruited = soldiers.some((s) => s.type === type);
                 const isFull = soldiers.length >= base.maxSoldiers;

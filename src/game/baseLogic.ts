@@ -15,8 +15,8 @@ export interface BaseLevelDef {
   beaconColor: string;
 }
 
-// Hard squad cap — Jack (rifleman) + one other soldier, no more.
-export const MAX_SQUAD_SIZE = 2;
+// Hard squad cap — the full roster is Jack, Brick, and Zeus; no more than that.
+export const MAX_SQUAD_SIZE = 3;
 
 export const BASE_LEVELS: Record<number, BaseLevelDef> = {
   1: {
