@@ -160,7 +160,6 @@ export const BOSS_SPRITE_SETS: Record<string, BossSpriteSet> = {
   warlock: 'necromancer',
   ironclad: 'viking',
   executioner: 'reaper',
-  bouncer: 'troll',
   dj: 'viking',
   auntie: 'goblin',
   larry: 'necromancer',
@@ -175,16 +174,13 @@ export const BOSS_FLIP_ONLY_SETS = new Set<BossSpriteSet>(['necromancer']);
 // Static single-image rigs (no animation frames available) — animated only
 // via procedural squash/lean/bob at draw time.
 export const BOSS_STATIC_SETS = new Set<BossSpriteSet>(['troll']);
-export const TROLL_COLOR_BY_BOSS: Record<string, string> = {
-  bouncer: 'purple',
-};
+export const TROLL_COLOR_BY_BOSS: Record<string, string> = {};
 
 // hue-rotate + saturate filter per boss so recolors feel distinct from the base rig
 export const BOSS_TINTS: Record<string, string> = {
   behemoth: 'hue-rotate(0deg) saturate(1.3) brightness(0.95)',
   warlock: 'hue-rotate(70deg) saturate(1.4) brightness(0.9)',
   ironclad: 'hue-rotate(180deg) saturate(0.7) brightness(0.85)',
-  bouncer: 'hue-rotate(200deg) saturate(1.1) brightness(0.8)',
   dj: 'hue-rotate(30deg) saturate(1.8) brightness(1.05)',
   auntie: 'hue-rotate(-90deg) saturate(1.5) brightness(1.0)',
   larry: 'hue-rotate(260deg) saturate(1.3) brightness(0.95)',

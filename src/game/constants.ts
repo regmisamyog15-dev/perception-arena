@@ -80,12 +80,11 @@ export const GATE_DEFINITIONS = [
   { index: 2,  name: 'Gate II: Necrotic Sanctum',      cost: 220,  bossKey: 'warlock',     bossName: 'THE VOID WARLOCK',           bossIcon: '💀', bossColor: '#8a9a5b', arenaW: 3300, arenaH: 3300, eliteName: 'Necrotic Warden' },
   { index: 3,  name: 'Gate III: Iron Bastion',         cost: 380,  bossKey: 'ironclad',    bossName: 'IRONCLAD REAPER',            bossIcon: '⛓️', bossColor: '#7a6a58', arenaW: 3400, arenaH: 3400, eliteName: 'Ironclad Sentinel' },
   { index: 4,  name: 'Gate IV: Solar Executioner',     cost: 580,  bossKey: 'executioner', bossName: 'SOLAR TITAN EXECUTIONER',    bossIcon: '☀️', bossColor: '#f77f00', arenaW: 3600, arenaH: 3600, eliteName: 'Solar Arch-Champion' },
-  { index: 5,  name: 'Gate V: Abyssal Coliseum',       cost: 820,  bossKey: 'bouncer',     bossName: 'THE ABYSSAL BOUNCER',        bossIcon: '🕶️', bossColor: '#264653', arenaW: 3700, arenaH: 3700, eliteName: 'Abyssal Enforcer' },
-  { index: 6,  name: 'Gate VI: Tempest Spire',         cost: 1100, bossKey: 'dj',          bossName: 'DJ TEMPEST CRUSHER',         bossIcon: '⚡', bossColor: '#f4a261', arenaW: 3800, arenaH: 3800, eliteName: 'Stormbringer Guard' },
-  { index: 7,  name: 'Gate VII: Dread Wastes',         cost: 1450, bossKey: 'auntie',      bossName: 'DREAD QUEEN APOCALYPSE',     bossIcon: '👑', bossColor: '#e76f51', arenaW: 3900, arenaH: 3900, eliteName: 'Dread Dreadnought' },
-  { index: 8,  name: 'Gate VIII: Phantom Void',        cost: 1850, bossKey: 'larry',       bossName: 'VOIDWALKER LARRY',           bossIcon: '🎩', bossColor: '#9d4edd', arenaW: 4000, arenaH: 4000, eliteName: 'Shadow Assassin' },
-  { index: 9,  name: 'Gate IX: Obsidian Core',         cost: 2350, bossKey: 'gary',        bossName: 'GARY THE DESTROYER',         bossIcon: '🔥', bossColor: '#8b1a3f', arenaW: 4200, arenaH: 4200, eliteName: 'Magma Colossus' },
-  { index: 10, name: 'Gate X: Celestial Singularity',  cost: 3000, bossKey: 'overlord',    bossName: 'THE CELESTIAL OVERLORD',     bossIcon: '🌌', bossColor: '#1a141f', arenaW: 4600, arenaH: 4600, eliteName: 'Omega Seraph Guard' },
+  { index: 5,  name: 'Gate V: Tempest Spire',          cost: 1100, bossKey: 'dj',          bossName: 'DJ TEMPEST CRUSHER',         bossIcon: '⚡', bossColor: '#f4a261', arenaW: 3800, arenaH: 3800, eliteName: 'Stormbringer Guard' },
+  { index: 6,  name: 'Gate VI: Dread Wastes',          cost: 1450, bossKey: 'auntie',      bossName: 'DREAD QUEEN APOCALYPSE',     bossIcon: '👑', bossColor: '#e76f51', arenaW: 3900, arenaH: 3900, eliteName: 'Dread Dreadnought' },
+  { index: 7,  name: 'Gate VII: Phantom Void',         cost: 1850, bossKey: 'larry',       bossName: 'VOIDWALKER LARRY',           bossIcon: '🎩', bossColor: '#9d4edd', arenaW: 4000, arenaH: 4000, eliteName: 'Shadow Assassin' },
+  { index: 8,  name: 'Gate VIII: Obsidian Core',       cost: 2350, bossKey: 'gary',        bossName: 'GARY THE DESTROYER',         bossIcon: '🔥', bossColor: '#8b1a3f', arenaW: 4200, arenaH: 4200, eliteName: 'Magma Colossus' },
+  { index: 9,  name: 'Gate IX: Celestial Singularity',  cost: 3000, bossKey: 'overlord',    bossName: 'THE CELESTIAL OVERLORD',     bossIcon: '🌌', bossColor: '#1a141f', arenaW: 4600, arenaH: 4600, eliteName: 'Omega Seraph Guard' },
 ];
 
 export const DOOR_COSTS = GATE_DEFINITIONS.map(g => g.cost);
@@ -159,22 +158,6 @@ export const BOSS_SKINS: BossSkin[] = [
     gimmick: 'solar_overload',    // Standing still >1.5s while solar is active triggers 3x damage burst
     gimmickHint: '⚠️ GIMMICK: SOLAR OVERLOAD — keep moving! Standing still during Solar Beam deals triple damage!',
     counterSkill: 'orbital_beam',
-  },
-  {
-    key: 'bouncer',
-    name: 'THE ABYSSAL BOUNCER',
-    color: '#264653',
-    emoji: '🕶️',
-    title: 'Guardian of the Void Gate',
-    quote: 'No entry. Prepare to be tossed!',
-    flies: false,
-    moves: ['charge', 'pushSlam', 'spin', 'leap', 'solarBeam'],
-    leapMult: 1.2,
-    chargeMult: 1.2,
-    hpMult: 1.25,
-    gimmick: 'wall_bounce',       // Charge slam sends player into arena wall for +50% bonus damage on impact
-    gimmickHint: '⚠️ GIMMICK: WALL BOUNCE — stay AWAY from edges! Getting slammed into the wall deals bonus damage!',
-    counterSkill: 'iron_skin',
   },
   {
     key: 'dj',
