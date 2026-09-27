@@ -92,6 +92,17 @@ export function updateBossAI(
     addScreenShake(32);
     spawnFloater(boss.x, boss.y - 130, '💀 FINAL PHASE: NO MORE HOLDING BACK', '#ffd166', 26);
     createParticles(boss.x, boss.y, '#ffd166', 80, 16, 800);
+    // DESPERATION ATTACK (spec item J) — a guaranteed, one-time signature
+    // finisher the instant Phase 3 opens, not just "faster + more damage".
+    // Overrides whatever the boss was mid-doing; the invuln window below
+    // covers the interruption so it never looks like a state glitch.
+    boss.state = 'despWindup';
+    boss.stateTimer = 500;
+    // Blink adjacent to the player immediately — the desperation attack
+    // reads as "it's suddenly right on top of you", not a slow walk-up.
+    const despAng = Math.random() * Math.PI * 2;
+    boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, player.x + Math.cos(despAng) * 140));
+    boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, player.y + Math.sin(despAng) * 140));
   }
   const phaseInvuln = boss.phaseTransitionUntil !== undefined && now < boss.phaseTransitionUntil;
   if (phaseInvuln) {
@@ -1014,6 +1025,60 @@ export function updateBossAI(
       boss.areaZones = [...(boss.areaZones || []), ...zones];
       addScreenShake(10);
       spawnFloater(boss.x, boss.y - 100, '⚠️ DANGER ZONES ACTIVE!', '#f4a261', 20);
+      boss.state = 'chasing';
+      boss.stateTimer = boss.cycleMs;
+    }
+  } else if (boss.state === 'despWindup') {
+    // The one-time Phase 3 signature finisher (spec item J). Fully
+    // telegraphed — a full extra beat longer than a normal windup — so
+    // "it's suddenly next to you" still leaves a real read before it goes off.
+    boss.squash = 1.3 + Math.sin(now / 60) * 0.15;
+    if (Math.random() < 0.6) createParticles(boss.x, boss.y - boss.height, '#ffd166', 4, 7, 250);
+    if (boss.stateTimer <= 0) {
+      boss.state = 'despStrike';
+      boss.stateTimer = 260;
+      boss.facingAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+      addScreenShake(24);
+      spawnFloater(boss.x, boss.y - 130, '💀 DESPERATION STRIKE!', '#ff4d5e', 26);
+    }
+  } else if (boss.state === 'despStrike') {
+    if (boss.stateTimer <= 0) {
+      // Omnidirectional burst — expanding shockwave plus a full ring of
+      // projectiles. Big and scary-looking, but a single readable payload,
+      // not a stacked wall of unavoidable damage.
+      const waveDmg = Math.round(45 * dmgMul);
+      shockwaves.push({
+        id: Math.random().toString(),
+        x: boss.x, y: boss.y,
+        r: 40, maxR: 480,
+        dmg: waveDmg, speed: 13,
+        color: '#ff4d5e', pushForce: 16,
+      });
+      const count = 8;
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2;
+        bullets.push({
+          id: Math.random().toString(),
+          x: boss.x,
+          y: boss.y - boss.height,
+          vx: Math.cos(a) * 7.5,
+          vy: Math.sin(a) * 7.5,
+          dmg: 24 * dmgMul,
+          cls: 'zfireball',
+          life: 1800,
+          fromBoss: true,
+          splash: 60,
+        });
+      }
+      addScreenShake(30);
+      createParticles(boss.x, boss.y, '#ff4d5e', 70, 16, 700);
+      playExplosionSound();
+      boss.state = 'despRecover';
+      boss.stateTimer = 900; // long, real punish window — the payoff for surviving it
+    }
+  } else if (boss.state === 'despRecover') {
+    boss.squash = 0.85;
+    if (boss.stateTimer <= 0) {
       boss.state = 'chasing';
       boss.stateTimer = boss.cycleMs;
     }

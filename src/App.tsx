@@ -521,9 +521,11 @@ export default function App() {
       // actually matter: tank a committed attack and it barely dents them,
       // dodge it clean and the recovery window afterward is wide open.
       const isRecovering = boss.state === 'chargeRecover' || boss.state === 'tripped' ||
+        boss.state === 'despRecover' ||
         (boss.state === 'landing' && (boss.height || 0) <= 0);
       const isCommitted = boss.state === 'charging' || boss.state === 'spinning' ||
-        boss.state === 'laserSweep' || boss.state === 'solarBeam' || boss.state === 'airborne';
+        boss.state === 'laserSweep' || boss.state === 'solarBeam' || boss.state === 'airborne' ||
+        boss.state === 'despStrike';
       if (isRecovering) {
         dmgMultiplier *= 1.6;
         if (Math.random() < 0.35) spawnFloatingText(boss.x, boss.y - boss.r - 40, 'PUNISH!', '#7ee787', 15);

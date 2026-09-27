@@ -1185,7 +1185,7 @@ export function renderGameScene(
       'chargeWindup', 'charging', 'anticipate', 'rising', 'airborne', 'landing',
       'solarWindup', 'solarBeam', 'laserWindup', 'laserSweep', 'fireballWindup',
       'spinWindup', 'spinning', 'teleportOut', 'teleportStrike', 'summonWindup', 'roar', 'spikeField',
-      'frostWindup', 'frostBeam', 'denialWindup',
+      'frostWindup', 'frostBeam', 'denialWindup', 'despWindup', 'despStrike',
     ]);
     const bossAnim: 'idle' | 'walk' | 'attack' = attackStates.has(boss.state)
       ? 'attack'
@@ -1198,9 +1198,11 @@ export function renderGameScene(
     // readable at a glance instead of only showing up as a floating number
     // after the fact.
     const isRecovering = boss.state === 'chargeRecover' || boss.state === 'tripped' ||
+      boss.state === 'despRecover' ||
       (boss.state === 'landing' && (boss.height || 0) <= 0);
     const isCommitted = boss.state === 'charging' || boss.state === 'spinning' ||
-      boss.state === 'laserSweep' || boss.state === 'solarBeam' || boss.state === 'airborne';
+      boss.state === 'laserSweep' || boss.state === 'solarBeam' || boss.state === 'airborne' ||
+      boss.state === 'despStrike';
 
     if (isRecovering) {
       // Bright green pulsing ring — "hit me now, I'm wide open"
