@@ -164,7 +164,7 @@ export const BOSS_SPRITE_SETS: Record<string, BossSpriteSet> = {
   dj: 'viking',
   auntie: 'goblin',
   larry: 'necromancer',
-  gary: 'troll',
+  gary: 'reaper',
   overlord: 'viking',
 };
 
@@ -177,7 +177,6 @@ export const BOSS_FLIP_ONLY_SETS = new Set<BossSpriteSet>(['necromancer']);
 export const BOSS_STATIC_SETS = new Set<BossSpriteSet>(['troll']);
 export const TROLL_COLOR_BY_BOSS: Record<string, string> = {
   bouncer: 'purple',
-  gary: 'red',
 };
 
 // hue-rotate + saturate filter per boss so recolors feel distinct from the base rig
@@ -189,7 +188,11 @@ export const BOSS_TINTS: Record<string, string> = {
   dj: 'hue-rotate(30deg) saturate(1.8) brightness(1.05)',
   auntie: 'hue-rotate(-90deg) saturate(1.5) brightness(1.0)',
   larry: 'hue-rotate(260deg) saturate(1.3) brightness(0.95)',
-  gary: 'hue-rotate(110deg) saturate(1.2) brightness(0.9)',
+  // The reaper rig is a near-grayscale silhouette, so a plain hue-rotate
+  // does nothing (no hue to rotate on gray pixels) — sepia(1) first gives
+  // it a color cast to rotate, landing on a deep crimson "berserker" look
+  // that reads as a distinct reskin from the plain black Executioner.
+  gary: 'sepia(1) saturate(6) hue-rotate(350deg) brightness(0.55) contrast(1.2)',
   overlord: 'hue-rotate(230deg) saturate(1.9) brightness(0.75) contrast(1.15)',
 };
 

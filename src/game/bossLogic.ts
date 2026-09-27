@@ -354,11 +354,11 @@ export function updateBossAI(
       boss.baseSpeed *= 1.4;
       addScreenShake(28);
       playBossRoarSound();
-      spawnFloater(boss.x, boss.y - 110, '💀 BERSERKER RAGE ACTIVATED! KEEP MOVING!', '#588157', 24);
-      createParticles(boss.x, boss.y, '#588157', 60, 14, 700);
+      spawnFloater(boss.x, boss.y - 110, '💀 BERSERKER RAGE ACTIVATED! KEEP MOVING!', '#8b1a3f', 24);
+      createParticles(boss.x, boss.y, '#8b1a3f', 60, 14, 700);
     }
     if (boss.gimmickActive && Math.random() < 0.3) {
-      createParticles(boss.x + (Math.random()-0.5)*60, boss.y + (Math.random()-0.5)*60, '#588157', 2, 5, 200);
+      createParticles(boss.x + (Math.random()-0.5)*60, boss.y + (Math.random()-0.5)*60, '#8b1a3f', 2, 5, 200);
     }
   }
 

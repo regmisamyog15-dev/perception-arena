@@ -84,7 +84,7 @@ export const GATE_DEFINITIONS = [
   { index: 6,  name: 'Gate VI: Tempest Spire',         cost: 1100, bossKey: 'dj',          bossName: 'DJ TEMPEST CRUSHER',         bossIcon: '⚡', bossColor: '#f4a261', arenaW: 3800, arenaH: 3800, eliteName: 'Stormbringer Guard' },
   { index: 7,  name: 'Gate VII: Dread Wastes',         cost: 1450, bossKey: 'auntie',      bossName: 'DREAD QUEEN APOCALYPSE',     bossIcon: '👑', bossColor: '#e76f51', arenaW: 3900, arenaH: 3900, eliteName: 'Dread Dreadnought' },
   { index: 8,  name: 'Gate VIII: Phantom Void',        cost: 1850, bossKey: 'larry',       bossName: 'VOIDWALKER LARRY',           bossIcon: '🎩', bossColor: '#9d4edd', arenaW: 4000, arenaH: 4000, eliteName: 'Shadow Assassin' },
-  { index: 9,  name: 'Gate IX: Obsidian Core',         cost: 2350, bossKey: 'gary',        bossName: 'GARY THE DESTROYER',         bossIcon: '🔥', bossColor: '#588157', arenaW: 4200, arenaH: 4200, eliteName: 'Magma Colossus' },
+  { index: 9,  name: 'Gate IX: Obsidian Core',         cost: 2350, bossKey: 'gary',        bossName: 'GARY THE DESTROYER',         bossIcon: '🔥', bossColor: '#8b1a3f', arenaW: 4200, arenaH: 4200, eliteName: 'Magma Colossus' },
   { index: 10, name: 'Gate X: Celestial Singularity',  cost: 3000, bossKey: 'overlord',    bossName: 'THE CELESTIAL OVERLORD',     bossIcon: '🌌', bossColor: '#1a141f', arenaW: 4600, arenaH: 4600, eliteName: 'Omega Seraph Guard' },
 ];
 
@@ -227,7 +227,7 @@ export const BOSS_SKINS: BossSkin[] = [
   {
     key: 'gary',
     name: 'GARY THE DESTROYER',
-    color: '#588157',
+    color: '#8b1a3f',
     emoji: '🔥',
     title: 'Scourge of the Netherite',
     quote: 'Your survival request has been DENIED with extreme prejudice!',
