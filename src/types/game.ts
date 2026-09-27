@@ -137,7 +137,7 @@ export interface Boss {
   baseSpeed: number;
   color: string;
   dead: boolean;
-  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField';
+  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField' | 'frostWindup' | 'frostBeam' | 'denialWindup';
   stateTimer: number;
   targetAng: number;
   facingAng: number;
@@ -193,6 +193,13 @@ export interface Boss {
   portalCheckAt?: number;
   // Universal yellow orb volley — every boss, independent of gimmick/moveset
   orbCheckAt?: number;
+  // Freeze/Slow beam — narrow aimed bolt that slows the player on hit (phase 2+)
+  frostAng?: number;
+  frostHitPlayer?: boolean; // tracks whether it connected, to unlock a follow-up chain
+  // Area Denial — 2-4 short-lived hazard zones the player must reposition out of
+  areaZones?: { x: number; y: number; r: number; warnUntil: number; expiresAt: number }[];
+  // Feint — boss commits to one recognizable windup, then cancels into a different attack
+  feintInto?: 'charge';
 }
 
 // Big slow projectile fired by any boss roughly once a minute. Travels in a

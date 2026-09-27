@@ -52,7 +52,7 @@ import {
 } from './audio/sound';
 import { generateWorldStructures } from './game/structures';
 import { updateTowersAndClimbing } from './game/towerLogic';
-import { updateBossAI } from './game/bossLogic';
+import { updateBossAI, shatterPhantomDecoy } from './game/bossLogic';
 import { renderGameScene } from './game/renderWorld';
 import { preloadAllSprites } from './game/sprites';
 import {
@@ -612,7 +612,20 @@ export default function App() {
         damageEntity(t, dmg * (1 - dist / (radius * 1.5)));
       }
     }
-  }, [createParticles, damageEntity]);
+
+    // Phantom Feint decoys — AOE can shatter them too, same as melee/bullets.
+    if (hitsBoss && engineRef.current.boss?.state === 'phantomTelegraph' && engineRef.current.boss.phantomSpots) {
+      const boss = engineRef.current.boss;
+      for (let i = boss.phantomSpots.length - 1; i >= 0; i--) {
+        const spot = boss.phantomSpots[i];
+        if (spot.real) continue;
+        const dist = Math.hypot(spot.x - x, spot.y - y);
+        if (dist < radius + boss.r) {
+          shatterPhantomDecoy(boss, i, createParticles, spawnFloatingText, addScreenShake);
+        }
+      }
+    }
+  }, [createParticles, damageEntity, spawnFloatingText, addScreenShake]);
 
   const handleBossDeath = useCallback((b: Boss) => {
     spawnFloatingText(b.x, b.y, `${b.skin.name} DEFEATED!`, '#ffd166', 30);
@@ -871,7 +884,27 @@ export default function App() {
         }
       }
     }
-  }, [damageEntity, spawnFloatingText]);
+
+    // Phantom Feint decoys — the actual "hit the clones to find the real
+    // boss" interaction. Same arc/range check as a normal melee swing;
+    // a decoy shatters instead of taking damage.
+    if (engineRef.current.boss?.state === 'phantomTelegraph' && engineRef.current.boss.phantomSpots) {
+      const boss = engineRef.current.boss;
+      for (let i = boss.phantomSpots.length - 1; i >= 0; i--) {
+        const spot = boss.phantomSpots[i];
+        if (spot.real) continue;
+        const dist = Math.hypot(spot.x - player.x, spot.y - player.y);
+        if (dist < range + boss.r) {
+          const tAng = Math.atan2(spot.y - player.y, spot.x - player.x);
+          let diff = Math.abs(tAng - ang);
+          if (diff > Math.PI) diff = Math.PI * 2 - diff;
+          if (diff < arc / 2) {
+            shatterPhantomDecoy(boss, i, createParticles, spawnFloatingText, addScreenShake);
+          }
+        }
+      }
+    }
+  }, [damageEntity, spawnFloatingText, createParticles, addScreenShake]);
 
   // Ground Slam — a boss-style AOE smash, part of base kit (not skill-gated)
   const performGroundSlam = useCallback(() => {
@@ -921,6 +954,20 @@ export default function App() {
         ent.y += Math.sin(a) * 60;
       }
     }
+
+    // Phantom Feint decoys — Ground Slam is an AOE, so it can shatter one too.
+    if (eng.boss?.state === 'phantomTelegraph' && eng.boss.phantomSpots) {
+      const boss = eng.boss;
+      for (let i = boss.phantomSpots.length - 1; i >= 0; i--) {
+        const spot = boss.phantomSpots[i];
+        if (spot.real) continue;
+        const d = Math.hypot(spot.x - player.x, spot.y - player.y);
+        if (d < RADIUS + boss.r) {
+          shatterPhantomDecoy(boss, i, createParticles, spawnFloatingText, addScreenShake);
+        }
+      }
+    }
+
     createParticles(player.x, player.y, '#ffb703', 20, 8, 400);
     spawnFloatingText(player.x, player.y - 50, '💥 GROUND SLAM!', '#ffb703', 20);
   }, [addScreenShake, createParticles, damageEntity, spawnFloatingText]);
@@ -1683,8 +1730,11 @@ export default function App() {
           moveY *= 0.7071;
         }
 
-        const currentSpeed = tank.mounted ? (4.8 + (tank.speedLevel || 0) * 0.75) : player.speed;
         const nowTs = performance.now();
+        // Freeze/Slow boss attack — player.frozenUntil is set by the frost
+        // bolt in bossLogic.ts. Slows, never fully locks, movement.
+        const slowMul = !tank.mounted && nowTs < player.frozenUntil ? 0.45 : 1;
+        const currentSpeed = tank.mounted ? (4.8 + (tank.speedLevel || 0) * 0.75) : player.speed * slowMul;
         if (!tank.mounted && nowTs < player.dashLockedUntil) {
           player.x += player.dashVx;
           player.y += player.dashVy;
@@ -2161,6 +2211,22 @@ export default function App() {
                   damageEntity(eng.boss, b.dmg, true); // isRanged = true for gimmick system
                 }
                 hit = true;
+              }
+            }
+
+            // Phantom Feint decoys — a bullet landing on a decoy shatters it
+            // (consumed, no damage) instead of passing through untouched.
+            if (!hit && !b.noBossDamage && eng.boss?.state === 'phantomTelegraph' && eng.boss.phantomSpots) {
+              const boss = eng.boss;
+              for (let di = boss.phantomSpots.length - 1; di >= 0; di--) {
+                const spot = boss.phantomSpots[di];
+                if (spot.real) continue;
+                const dDecoy = distToSegment(spot.x, spot.y, prevX, prevY, b.x, b.y);
+                if (dDecoy < boss.r + 8) {
+                  shatterPhantomDecoy(boss, di, createParticles, spawnFloatingText, addScreenShake);
+                  hit = true;
+                  break;
+                }
               }
             }
 

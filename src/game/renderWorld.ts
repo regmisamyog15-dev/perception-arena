@@ -674,6 +674,38 @@ export function renderGameScene(
     }
   }
 
+  // Area Denial Zones — brief warning outline, then a hot pulsing danger
+  // circle, then gone. World-space so it reads correctly regardless of
+  // where the boss wanders off to afterward.
+  if (boss?.areaZones) {
+    const zNow = performance.now();
+    for (const z of boss.areaZones) {
+      const warning = zNow < z.warnUntil;
+      if (warning) {
+        const pulse = 0.35 + Math.sin(zNow / 90) * 0.2;
+        ctx.strokeStyle = `rgba(244, 162, 97, ${pulse})`;
+        ctx.setLineDash([8, 6]);
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        const lifeLeft = Math.max(0, (z.expiresAt - zNow) / 1000);
+        const fade = Math.min(1, lifeLeft / 0.6); // fade out over its last 0.6s
+        ctx.fillStyle = `rgba(193, 68, 14, ${0.28 * fade})`;
+        ctx.beginPath();
+        ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = `rgba(255, 140, 0, ${0.7 * fade})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(z.x, z.y, z.r + Math.sin(zNow / 100) * 4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
   // Boss Orbs — big, slow, dodgeable projectiles that can also be shot down
   for (const orb of (bossOrbs || [])) {
     const pulse = 1 + Math.sin(performance.now() / 120) * 0.08;
@@ -1119,12 +1151,41 @@ export function renderGameScene(
       ctx.restore();
     }
 
+    // Frost Bolt (Freeze/Slow attack) — a narrow aimed line, dashed and
+    // pulsing while telegraphing, solid and glowing once fired. Locked at
+    // fire time rather than sweeping, so moving off the line is a real dodge.
+    if (boss.state === 'frostBeam' && boss.frostAng !== undefined) {
+      ctx.save();
+      ctx.strokeStyle = '#7ad6ff';
+      ctx.lineWidth = 7;
+      ctx.shadowColor = '#bff0ff';
+      ctx.shadowBlur = 20;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(boss.frostAng) * 1100, Math.sin(boss.frostAng) * 1100);
+      ctx.stroke();
+      ctx.restore();
+    } else if (boss.state === 'frostWindup' && boss.frostAng !== undefined) {
+      const pulse = 0.4 + Math.sin(performance.now() / 80) * 0.25;
+      ctx.save();
+      ctx.strokeStyle = `rgba(122, 214, 255, ${pulse})`;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 8]);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(boss.frostAng) * 1100, Math.sin(boss.frostAng) * 1100);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     // Boss Body — animated sprite (falls back to the ellipse blob while decoding)
     const bossNow = performance.now();
     const attackStates = new Set([
       'chargeWindup', 'charging', 'anticipate', 'rising', 'airborne', 'landing',
       'solarWindup', 'solarBeam', 'laserWindup', 'laserSweep', 'fireballWindup',
       'spinWindup', 'spinning', 'teleportOut', 'teleportStrike', 'summonWindup', 'roar', 'spikeField',
+      'frostWindup', 'frostBeam', 'denialWindup',
     ]);
     const bossAnim: 'idle' | 'walk' | 'attack' = attackStates.has(boss.state)
       ? 'attack'
