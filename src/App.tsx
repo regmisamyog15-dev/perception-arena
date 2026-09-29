@@ -79,6 +79,7 @@ import {
   toggleEquipPowerStand,
 } from './game/superpowerLogic';
 import { ShopModal } from './components/ShopModal';
+import { WorldMap } from './components/WorldMap';
 import { GameHUD } from './components/GameHUD';
 import StartScreen from './components/StartScreen';
 
@@ -96,6 +97,8 @@ export default function App() {
   // React State for UI & Modals
   const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover'>('start');
   const [shopOpen, setShopOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [pinnedDoorIndex, setPinnedDoorIndex] = useState<number | null>(null);
   const [highScore, setHighScore] = useState(() => {
     try {
       return parseInt(localStorage.getItem('perception_arena_highscore') || '0', 10);
@@ -1620,6 +1623,7 @@ export default function App() {
       unlockAudio();
       engineRef.current.keys[e.key.toLowerCase()] = true;
       if (e.key === 'b' || e.key === 'B') setShopOpen((prev) => !prev);
+      if (e.key === 'm' || e.key === 'M') setMapOpen((prev) => !prev);
       if (e.key === 'q' || e.key === 'Q') performMelee();
       if (e.key === 'g' || e.key === 'G') throwGrenade();
       if (e.key === 'e' || e.key === 'E') useConsumable();
@@ -1707,7 +1711,7 @@ export default function App() {
       const dt = Math.min(100, time - eng.lastTime);
       eng.lastTime = time;
 
-      if (gameState === 'playing' && !shopOpen) {
+      if (gameState === 'playing' && !shopOpen && !mapOpen) {
         eng.gameTime += dt;
         eng.airdropTimer -= dt;
         eng.bossTimer -= dt;
@@ -2490,6 +2494,7 @@ export default function App() {
   }, [
     gameState,
     shopOpen,
+    mapOpen,
     performMelee,
     shootWeapon,
     throwGrenade,
@@ -2758,7 +2763,10 @@ export default function App() {
           superpowers={engineRef.current.superpowers}
           soldiers={engineRef.current.soldiers}
           base={engineRef.current.base}
+          doors={engineRef.current.doors}
+          pinnedDoorIndex={pinnedDoorIndex}
           onOpenShop={() => setShopOpen(true)}
+          onOpenMap={() => setMapOpen(true)}
           onPerformMelee={performMelee}
           onSelectSlot={(idx) => {
             if (engineRef.current.player.slots[idx]) engineRef.current.player.activeSlot = idx;
@@ -2819,6 +2827,18 @@ export default function App() {
           onRepairTowers={handleRepairTowers}
           onToggleEquipSkill={handleToggleEquipSkill}
           onClose={() => setShopOpen(false)}
+        />
+      )}
+
+      {/* World Map — pin a door and track its bearing via the compass ring */}
+      {mapOpen && (
+        <WorldMap
+          doors={engineRef.current.doors}
+          playerX={engineRef.current.player.x}
+          playerY={engineRef.current.player.y}
+          pinnedDoorIndex={pinnedDoorIndex}
+          onPin={setPinnedDoorIndex}
+          onClose={() => setMapOpen(false)}
         />
       )}
     </div>

@@ -1,6 +1,15 @@
 import React from 'react';
 import { PlayerState, Door, Superpower, Soldier, BaseState } from '../types/game';
 
+// Bearing from the player to a pinned door, in degrees, 0 = north/up,
+// clockwise — matches a CSS rotate() applied to an upward-pointing arrow.
+// World y grows downward (canvas convention), so "north" is -y.
+function bearingDeg(fromX: number, fromY: number, toX: number, toY: number) {
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  return ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
+}
+
 interface Props {
   hudState: {
     hp: number;
@@ -38,7 +47,10 @@ interface Props {
   superpowers: Record<string, Superpower>;
   soldiers: Soldier[];
   base: BaseState;
+  doors: Door[];
+  pinnedDoorIndex: number | null;
   onOpenShop: () => void;
+  onOpenMap: () => void;
   onPerformMelee: () => void;
   onSelectSlot: (idx: number) => void;
   onThrowGrenade: () => void;
@@ -53,7 +65,10 @@ export const GameHUD: React.FC<Props> = ({
   superpowers,
   soldiers,
   base,
+  doors,
+  pinnedDoorIndex,
   onOpenShop,
+  onOpenMap,
   onPerformMelee,
   onSelectSlot,
   onThrowGrenade,
@@ -62,6 +77,9 @@ export const GameHUD: React.FC<Props> = ({
   onPerformGroundSlam,
 }) => {
   const now = performance.now();
+  const pinnedDoor = pinnedDoorIndex != null ? doors.find((d) => d.index === pinnedDoorIndex) || null : null;
+  const compassHeading = pinnedDoor ? bearingDeg(player.x, player.y, pinnedDoor.x, pinnedDoor.y) : null;
+  const compassDistance = pinnedDoor ? Math.round(Math.hypot(pinnedDoor.x - player.x, pinnedDoor.y - player.y)) : null;
 
   return (
     <div className="absolute inset-0 z-20 pointer-events-none p-4 flex flex-col justify-between">
@@ -240,6 +258,42 @@ export const GameHUD: React.FC<Props> = ({
               <span>Base & Squad HQ</span>
               <span className="text-[#7ee787]">PRESS B ↗</span>
             </div>
+          </div>
+
+          <div
+            onClick={onOpenMap}
+            className="glass-panel p-3 w-56 pointer-events-auto cursor-pointer border border-[#83d3e1]/60 hover:bg-[#83d3e1]/10 transition-colors bg-[#0a0a0d]/90"
+          >
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-[#83d3e1] font-bold tracking-widest">🗺️ WORLD MAP</span>
+              <span className="text-[#83d3e1] text-xs">PRESS M ↗</span>
+            </div>
+            {pinnedDoor && compassHeading != null ? (
+              <div className="mt-2 pt-2 border-t border-gray-800 flex items-center gap-2">
+                <div
+                  className="flex-shrink-0"
+                  style={{ transform: `rotate(${compassHeading}deg)`, transition: 'transform 150ms linear' }}
+                  title={`Bearing to ${pinnedDoor.name}`}
+                >
+                  <div
+                    style={{
+                      width: 0,
+                      height: 0,
+                      borderLeft: '6px solid transparent',
+                      borderRight: '6px solid transparent',
+                      borderBottom: '11px solid #ffd166',
+                      filter: 'drop-shadow(0 0 4px #ffd166)',
+                    }}
+                  />
+                </div>
+                <div className="text-left leading-tight">
+                  <div className="text-[10px] text-[#ffd166] font-bold truncate max-w-[150px]">📌 {pinnedDoor.name}</div>
+                  <div className="text-[9px] text-gray-400">{compassDistance} units away</div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-[9px] text-gray-500 mt-1">No location pinned</div>
+            )}
           </div>
         </div>
       </div>
