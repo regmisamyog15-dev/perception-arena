@@ -197,6 +197,19 @@
   z-index: -1;
 }
 
+.start-screen-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(131, 211, 225, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(131, 211, 225, 0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, #000 30%, transparent 85%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, #000 30%, transparent 85%);
+}
+
 #vignette {
   position: absolute;
   inset: 0;

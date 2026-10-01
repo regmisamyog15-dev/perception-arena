@@ -25,7 +25,7 @@ export const NO_POD_RESPAWN_MS = 90000;  // slow fallback respawn if you never b
 export const MAX_SOLDIER_LEVEL = 11;
 
 export const WEAPONS: Record<string, WeaponDef> = {
-  pistol: { id: 'pistol', name: 'Pistol', icon: '🔫', iconImg: '/sprites/icons/guns/Icon29_01.png', dmg: 28, rate: 220, spread: 0.04, speed: 20, infinite: true, auto: false, type: 'gun', repairCost: 0 },
+  plasma: { id: 'plasma', name: 'Plasma', icon: '🔫', iconImg: '/sprites/icons/guns/Icon29_01.png', dmg: 28, rate: 220, spread: 0.04, speed: 20, infinite: true, auto: false, type: 'gun', repairCost: 0 },
   smg: { id: 'smg', name: 'SMG', icon: '📠', iconImg: '/sprites/icons/guns/Icon29_09.png', dmg: 16, rate: 75, spread: 0.10, speed: 22, durMax: 260, auto: true, type: 'gun', repairCost: 20 },
   ak47: { id: 'ak47', name: 'AK-47', icon: '🔫', iconImg: '/sprites/icons/guns/Icon29_17.png', dmg: 38, rate: 130, spread: 0.05, speed: 24, durMax: 200, auto: true, type: 'gun', repairCost: 35 },
   shotgun: { id: 'shotgun', name: 'Combat Shotgun', icon: '💥', iconImg: '/sprites/icons/guns/Icon29_29.png', dmg: 22, rate: 550, spread: 0.22, speed: 18, durMax: 60, auto: false, pellets: 8, type: 'gun', repairCost: 30 },

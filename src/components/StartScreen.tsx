@@ -38,9 +38,10 @@ export default function StartScreen({ highScore, hasSavedGame, onStart, onContin
 
   return (
     <div className="screen-overlay">
-      <div className="w-full max-w-3xl">
+      <div className="start-screen-grid" />
+      <div className="w-full max-w-3xl relative">
         {/* Title banner */}
-        <div className="relative text-center mb-4">
+        <div className="relative text-center mb-3">
           <div className="title-glow-bg" />
           <h1 className="font-display text-4xl md:text-6xl font-black text-[#ff4d5e] neon-text-red tracking-wider">
             PERCEPTION ARENA
@@ -48,6 +49,13 @@ export default function StartScreen({ highScore, hasSavedGame, onStart, onContin
           <p className="text-[#83d3e1] text-[11px] md:text-xs tracking-[0.3em] uppercase mt-1">
             Survive · Build · Dominate the Boss Titans
           </p>
+          {highScore > 0 && (
+            <div className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full bg-[#ffcf5c]/10 border border-[#ffcf5c]/40">
+              <span className="text-[#ffcf5c] text-xs">🏆</span>
+              <span className="text-[10px] text-gray-400 uppercase tracking-widest">Best Wave</span>
+              <span className="text-xs font-bold text-[#ffcf5c] font-mono">{highScore}</span>
+            </div>
+          )}
         </div>
 
         {/* GTA-style tab bar */}
@@ -67,7 +75,17 @@ export default function StartScreen({ highScore, hasSavedGame, onStart, onContin
           ))}
         </div>
 
-        <div className="bg-gray-900/90 border border-gray-700 rounded-xl shadow-2xl min-h-[320px] max-h-[60vh] overflow-y-auto">
+        <div
+          className="bg-gray-900/90 border rounded-xl shadow-2xl min-h-[320px] max-h-[60vh] overflow-y-auto transition-colors duration-200"
+          style={{
+            borderColor: tab === 'play' ? 'rgba(255,209,102,0.5)' : tab === 'guide' ? 'rgba(131,211,225,0.5)' : 'rgba(126,231,135,0.5)',
+            boxShadow: `0 0 24px ${tab === 'play' ? 'rgba(255,209,102,0.12)' : tab === 'guide' ? 'rgba(131,211,225,0.12)' : 'rgba(126,231,135,0.12)'}`,
+          }}
+        >
+          <div
+            className="h-1 w-full rounded-t-xl transition-colors duration-200"
+            style={{ background: tab === 'play' ? '#ffd166' : tab === 'guide' ? '#83d3e1' : '#7ee787' }}
+          />
           {tab === 'play' && (
             <div className="p-6 text-left text-xs md:text-sm leading-relaxed text-gray-300">
               <p className="mb-3 text-center text-[#83d3e1] font-bold tracking-widest uppercase">
@@ -93,9 +111,6 @@ export default function StartScreen({ highScore, hasSavedGame, onStart, onContin
                   damage.
                 </li>
               </ul>
-              <p className="text-center text-[#ffcf5c] text-xs">
-                High Score (Best Wave): <span className="font-bold text-white">{highScore}</span>
-              </p>
             </div>
           )}
 

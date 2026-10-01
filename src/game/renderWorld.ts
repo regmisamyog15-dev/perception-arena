@@ -298,8 +298,23 @@ export function renderGameScene(
 
     const rad = base.safeRadius;
 
-    // 1. Reinforced Military Base Floor (Alloy Tiles & Hazard Trim)
-    ctx.fillStyle = base.level >= 4 ? '#181528' : base.level === 3 ? '#161d2a' : '#171c24';
+    // Soft ambient ground glow beneath everything, in the base's beacon color
+    const ambientGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, rad * 1.15);
+    ambientGlow.addColorStop(0, `${base.beaconColor}22`);
+    ambientGlow.addColorStop(1, `${base.beaconColor}00`);
+    ctx.fillStyle = ambientGlow;
+    ctx.beginPath();
+    ctx.arc(0, 0, rad * 1.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 1. Reinforced Military Base Floor (Alloy Tiles & Hazard Trim) — radial
+    // gradient instead of a flat fill so the floor reads with real depth
+    const floorBase = base.level >= 4 ? '#181528' : base.level === 3 ? '#161d2a' : '#171c24';
+    const floorEdge = base.level >= 4 ? '#0c0a16' : base.level === 3 ? '#0a0e15' : '#0d1015';
+    const floorGrad = ctx.createRadialGradient(0, -rad * 0.15, rad * 0.1, 0, 0, rad);
+    floorGrad.addColorStop(0, floorBase);
+    floorGrad.addColorStop(1, floorEdge);
+    ctx.fillStyle = floorGrad;
     ctx.beginPath();
     ctx.arc(0, 0, rad, 0, Math.PI * 2);
     ctx.fill();
@@ -316,7 +331,10 @@ export function renderGameScene(
     ctx.globalAlpha = 1.0;
 
     // 2. Central Command Post Terminal Desk
-    ctx.fillStyle = '#1e293b';
+    const deskGrad = ctx.createLinearGradient(-50, -40, -50, 40);
+    deskGrad.addColorStop(0, '#28374f');
+    deskGrad.addColorStop(1, '#151e2e');
+    ctx.fillStyle = deskGrad;
     ctx.fillRect(-50, -40, 100, 80);
     ctx.strokeStyle = base.beaconColor;
     ctx.lineWidth = 2.5;
@@ -338,7 +356,10 @@ export function renderGameScene(
     ctx.fillText('COMMAND HUB', 0, -22);
 
     // 3. Gun Repair & Rebuild Workbench Station Box (Left side of Base)
-    ctx.fillStyle = '#27272a';
+    const repairGrad = ctx.createLinearGradient(-rad + 50, -35, -rad + 50, 35);
+    repairGrad.addColorStop(0, '#3a3a3f');
+    repairGrad.addColorStop(1, '#1c1c1f');
+    ctx.fillStyle = repairGrad;
     ctx.fillRect(-rad + 50, -35, 75, 70);
     ctx.strokeStyle = '#eab308';
     ctx.lineWidth = 2;
@@ -403,6 +424,16 @@ export function renderGameScene(
 
     // 5. Pulsing Forcefield Energy Barrier
     const pulseOffset = Math.sin(base.pulseTimer / 300) * 5;
+
+    // Soft inner wash just inside the barrier line, like light catching a dome
+    const domeWash = ctx.createRadialGradient(0, 0, rad * 0.7, 0, 0, rad + pulseOffset);
+    domeWash.addColorStop(0, `${base.beaconColor}00`);
+    domeWash.addColorStop(1, `${base.beaconColor}18`);
+    ctx.fillStyle = domeWash;
+    ctx.beginPath();
+    ctx.arc(0, 0, rad + pulseOffset, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.strokeStyle = base.beaconColor;
     ctx.lineWidth = 3.5;
     ctx.shadowColor = base.beaconColor;
