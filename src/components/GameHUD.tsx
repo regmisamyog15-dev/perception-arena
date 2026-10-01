@@ -1,6 +1,15 @@
 import React from 'react';
 import { PlayerState, Door, Superpower, Soldier, BaseState } from '../types/game';
 
+// Bearing from the player to a pinned door, in degrees, 0 = north/up,
+// clockwise — matches a CSS rotate() applied to an upward-pointing arrow.
+// World y grows downward (canvas convention), so "north" is -y.
+function bearingDeg(fromX: number, fromY: number, toX: number, toY: number) {
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  return ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
+}
+
 interface Props {
   hudState: {
     hp: number;
@@ -38,7 +47,10 @@ interface Props {
   superpowers: Record<string, Superpower>;
   soldiers: Soldier[];
   base: BaseState;
+  doors: Door[];
+  pinnedDoorIndex: number | null;
   onOpenShop: () => void;
+  onOpenMap: () => void;
   onPerformMelee: () => void;
   onSelectSlot: (idx: number) => void;
   onThrowGrenade: () => void;
@@ -53,7 +65,10 @@ export const GameHUD: React.FC<Props> = ({
   superpowers,
   soldiers,
   base,
+  doors,
+  pinnedDoorIndex,
   onOpenShop,
+  onOpenMap,
   onPerformMelee,
   onSelectSlot,
   onThrowGrenade,
@@ -62,6 +77,9 @@ export const GameHUD: React.FC<Props> = ({
   onPerformGroundSlam,
 }) => {
   const now = performance.now();
+  const pinnedDoor = pinnedDoorIndex != null ? doors.find((d) => d.index === pinnedDoorIndex) || null : null;
+  const compassHeading = pinnedDoor ? bearingDeg(player.x, player.y, pinnedDoor.x, pinnedDoor.y) : null;
+  const compassDistance = pinnedDoor ? Math.round(Math.hypot(pinnedDoor.x - player.x, pinnedDoor.y - player.y)) : null;
 
   return (
     <div className="absolute inset-0 z-20 pointer-events-none p-4 flex flex-col justify-between">
@@ -144,9 +162,14 @@ export const GameHUD: React.FC<Props> = ({
               <div className="font-display text-2xl font-black text-[#ff4d5e] neon-text-red tracking-widest text-center">
                 {hudState.bossName}
               </div>
-              {hudState.bossEnraged && (
+              {hudState.bossPhase === 2 && (
                 <span className="px-2 py-0.5 text-[10px] font-black tracking-widest bg-red-600/40 border border-red-500 text-red-300 rounded animate-pulse shadow-[0_0_10px_#f00]">
-                  🔥 PHASE 2: ENRAGED
+                  ⚠️ PHASE 2
+                </span>
+              )}
+              {hudState.bossPhase === 3 && (
+                <span className="px-2 py-0.5 text-[10px] font-black tracking-widest bg-yellow-600/40 border border-yellow-400 text-yellow-200 rounded animate-pulse shadow-[0_0_14px_#ffd166]">
+                  💀 FINAL PHASE
                 </span>
               )}
             </div>
@@ -160,10 +183,18 @@ export const GameHUD: React.FC<Props> = ({
             <div className="w-full h-5 bg-gray-950 rounded border-2 border-[#ff4d5e] relative overflow-hidden shadow-[0_0_15px_rgba(255,77,94,0.4)]">
               <div
                 className={`absolute top-0 left-0 h-full transition-all duration-150 ${
-                  hudState.bossEnraged ? 'bg-gradient-to-r from-red-600 via-orange-500 to-yellow-400' : 'bg-[#ff4d5e]'
+                  hudState.bossPhase === 3
+                    ? 'bg-gradient-to-r from-red-700 via-orange-500 to-yellow-300'
+                    : hudState.bossPhase === 2
+                    ? 'bg-gradient-to-r from-red-600 via-orange-500 to-yellow-400'
+                    : 'bg-[#ff4d5e]'
                 }`}
                 style={{ width: `${hudState.bossHpPct}%` }}
               />
+              {/* Phase-boundary ticks — 65% and 30% — so the thresholds that
+                  trigger phase transitions are visible, not a guess */}
+              <div className="absolute top-0 h-full w-[2px] bg-black/70" style={{ left: '30%' }} />
+              <div className="absolute top-0 h-full w-[2px] bg-black/70" style={{ left: '65%' }} />
             </div>
             <div className="text-[10px] text-[#ffd166] mt-1 font-bold">
               ⚡ Defeat this Boss to unlock Superpowers!
@@ -227,6 +258,42 @@ export const GameHUD: React.FC<Props> = ({
               <span>Base & Squad HQ</span>
               <span className="text-[#7ee787]">PRESS B ↗</span>
             </div>
+          </div>
+
+          <div
+            onClick={onOpenMap}
+            className="glass-panel p-3 w-56 pointer-events-auto cursor-pointer border border-[#83d3e1]/60 hover:bg-[#83d3e1]/10 transition-colors bg-[#0a0a0d]/90"
+          >
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-[#83d3e1] font-bold tracking-widest">🗺️ WORLD MAP</span>
+              <span className="text-[#83d3e1] text-xs">PRESS M ↗</span>
+            </div>
+            {pinnedDoor && compassHeading != null ? (
+              <div className="mt-2 pt-2 border-t border-gray-800 flex items-center gap-2">
+                <div
+                  className="flex-shrink-0"
+                  style={{ transform: `rotate(${compassHeading}deg)`, transition: 'transform 150ms linear' }}
+                  title={`Bearing to ${pinnedDoor.name}`}
+                >
+                  <div
+                    style={{
+                      width: 0,
+                      height: 0,
+                      borderLeft: '6px solid transparent',
+                      borderRight: '6px solid transparent',
+                      borderBottom: '11px solid #ffd166',
+                      filter: 'drop-shadow(0 0 4px #ffd166)',
+                    }}
+                  />
+                </div>
+                <div className="text-left leading-tight">
+                  <div className="text-[10px] text-[#ffd166] font-bold truncate max-w-[150px]">📌 {pinnedDoor.name}</div>
+                  <div className="text-[9px] text-gray-400">{compassDistance} units away</div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-[9px] text-gray-500 mt-1">No location pinned</div>
+            )}
           </div>
         </div>
       </div>

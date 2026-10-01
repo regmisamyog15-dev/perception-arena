@@ -25,32 +25,32 @@ export const SOLDIER_DEFINITIONS: Record<SoldierType, SoldierDef> = {
   rifleman: {
     type: 'rifleman',
     name: 'Jack "Trigger"',
-    title: 'Assault Marksman',
-    weaponName: 'AK-47',
+    title: 'Heavy Machine Gunner',
+    weaponName: 'M2 Vulcan Machine Gun',
     icon: '🎖️',
     color: '#4cc9f0',
     hasSuperpower: false,
-    baseHp: 460,
-    baseDmg: 54,
+    baseHp: 520,
+    baseDmg: 82,
     baseSpeed: 5.4,
-    baseRange: 520,
-    baseFireRate: 160,
+    baseRange: 560,
+    baseFireRate: 85,
     cost: 1000, // rented, not owned — see RIFLEMAN_RENTAL_MS
     upgradeCosts: [110, 220, 340, 480, 650, 850, 1080, 1350, 1650, 1980],
   },
   shotgunner: {
     type: 'shotgunner',
     name: 'Brick "Sledge"',
-    title: 'Heavy Breacher',
-    weaponName: 'Auto-Combat Shotgun',
+    title: 'Assault Trooper',
+    weaponName: 'AK-47',
     icon: '🛡️',
     color: '#f72585',
     hasSuperpower: false,
     baseHp: 500,
-    baseDmg: 24, // per pellet (6 pellets)
+    baseDmg: 34,
     baseSpeed: 4.8,
-    baseRange: 360,
-    baseFireRate: 520,
+    baseRange: 520,
+    baseFireRate: 130,
     cost: 110,
     upgradeCosts: [150, 280, 430, 600, 800, 1030, 1290, 1580, 1900, 2250],
   },
@@ -328,7 +328,7 @@ export function updateSoldiersLogic(
     } else {
       // Tactical ring formation around the player
       const formAng = (sIdx / Math.max(1, soldiers.length)) * Math.PI * 2;
-      const formDist = 65 + (s.type === 'shotgunner' ? 20 : s.type === 'sniper' ? 75 : 45);
+      const formDist = 65 + (s.type === 'sniper' ? 75 : 45);
       targetX = player.x + Math.cos(formAng) * formDist;
       targetY = player.y + Math.sin(formAng) * formDist;
     }
@@ -455,22 +455,23 @@ export function updateSoldiersLogic(
         const ang = s.targetAng + (Math.random() - 0.5) * 0.08;
         const bulletColor = s.isLegendaryHero ? (s.assignedPowerColor || '#ffd166') : s.color;
 
-        if (s.type === 'shotgunner') {
-          const pellets = s.level >= 3 ? 9 : s.level === 2 ? 7 : 6;
-          for (let p = 0; p < pellets; p++) {
-            const pAng = ang + (Math.random() - 0.5) * 0.35;
-            bullets.push({
-              id: Math.random().toString(),
-              x: s.x,
-              y: s.y,
-              vx: Math.cos(pAng) * 20,
-              vy: Math.sin(pAng) * 20,
-              dmg: s.dmg,
-              cls: 'bullet',
-              life: 500,
-              noBossDamage: true,
-            });
-          }
+        if (s.type === 'rifleman') {
+          // M2 Vulcan Machine Gun — Jack's signature weapon. The already very
+          // fast fireRate does the heavy lifting for "machine gun" DPS; this
+          // just gives it a punchier tracer and heavier muzzle flash so it
+          // visibly reads as automatic heavy weapons fire, not just a rifle.
+          bullets.push({
+            id: Math.random().toString(),
+            x: s.x,
+            y: s.y,
+            vx: Math.cos(ang) * 25,
+            vy: Math.sin(ang) * 25,
+            dmg: s.dmg,
+            cls: 'bullet',
+            life: 950,
+            noBossDamage: true,
+          });
+          createParticles(s.x + Math.cos(ang) * 14, s.y + Math.sin(ang) * 14, '#ffd166', 2, 3, 90);
         } else if (s.type === 'demolitionist') {
           bullets.push({
             id: Math.random().toString(),

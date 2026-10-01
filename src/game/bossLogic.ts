@@ -6,6 +6,40 @@ import {
 } from './constants';
 import { playExplosionSound, playBossRoarSound, playAlertStinger } from '../audio/sound';
 
+// Small controlled combo table (spec item 4): specific attacks are allowed to
+// chain directly into a named follow-up instead of always returning to
+// 'chasing'. Deliberately short and hand-picked — NOT a random chain of
+// everything. Phase-gated and rolled once per opportunity so it reads as an
+// occasional "oh, it's not done" rather than a permanent combo lock.
+const COMBO_CHANCE = 0.32;
+
+// Phantom Feint decoys are real, hittable bodies (not just a visual timer).
+// Shattering one is how the player actually solves "which one is real" —
+// this is the interactive core of the clone mechanic, called from App.tsx's
+// existing melee/explosion/bullet collision code so no separate hit-test
+// system is needed.
+export function shatterPhantomDecoy(
+  boss: Boss,
+  idx: number,
+  createParticles: (x: number, y: number, color: string, count: number, speedMax: number, lifeMax?: number) => void,
+  spawnFloater: (x: number, y: number, text: string, color?: string, size?: number) => void,
+  addScreenShake: (amount: number) => void
+) {
+  if (!boss.phantomSpots) return;
+  const spot = boss.phantomSpots[idx];
+  if (!spot || spot.real) return; // never lets the real boss be "shattered" for free
+  createParticles(spot.x, spot.y - boss.height, '#9fdb6e', 18, 7, 350);
+  spawnFloater(spot.x, spot.y - boss.height - 30, 'FAKE! 💨', '#9fdb6e', 16);
+  addScreenShake(4);
+  boss.phantomSpots = boss.phantomSpots.filter((_, i) => i !== idx);
+  // Once both decoys are down, the mystery is solved — cut the remaining
+  // telegraph short and go straight to the reveal + counterattack rather
+  // than making the player stare at an empty answer for the full window.
+  if (boss.phantomSpots.length && boss.phantomSpots.every(s => s.real)) {
+    boss.stateTimer = Math.min(boss.stateTimer, 120);
+  }
+}
+
 export function updateBossAI(
   boss: Boss,
   player: PlayerState,
@@ -29,17 +63,53 @@ export function updateBossAI(
   const gateTier = boss.doorIndex ? Math.floor((boss.doorIndex - 1) / 2) : 0;
   const dmgMul = (1 + gateTier * 0.22) * (boss.enraged ? 1.25 : 1.0);
 
-  // Check Enrage / Phase 2 threshold (below 40% HP)
-  if (!boss.enraged && boss.hp <= boss.hpMax * 0.4) {
-    boss.enraged = true;
+  // =====================================================
+  // MULTI-PHASE FIGHT — three real phases, not just a stronger HP bar.
+  // Phase 1 (100-65%): establishes patterns. Phase 2 (65-30%): faster,
+  // adds Phantom Feint to teleport. Phase 3 (<30%): fastest, most
+  // aggressive, full moveset. Each transition has a brief invulnerability
+  // window (so burst damage landing on the threshold can't skip the
+  // telegraph) plus a clear, satisfying beat: roar, shake, color surge.
+  // =====================================================
+  if (boss.phase === 1 && boss.hp <= boss.hpMax * 0.65) {
     boss.phase = 2;
-    boss.baseSpeed *= 1.2;
-    boss.cycleMs = Math.max(1200, boss.cycleMs * 0.75);
+    boss.enraged = true;
+    boss.phaseTransitionUntil = now + 550;
+    boss.baseSpeed *= 1.15;
+    boss.cycleMs = Math.max(1300, boss.cycleMs * 0.82);
     playBossRoarSound();
     playAlertStinger();
-    addScreenShake(25);
-    spawnFloater(boss.x, boss.y - 120, '🔥 PHASE 2: ENRAGED MODE ACTIVATED!', '#ff4d5e', 24);
-    createParticles(boss.x, boss.y, '#ff4d5e', 60, 14, 700);
+    addScreenShake(22);
+    spawnFloater(boss.x, boss.y - 120, '⚠️ PHASE 2: THE GLOVES ARE OFF', '#ff4d5e', 24);
+    createParticles(boss.x, boss.y, '#ff4d5e', 50, 12, 650);
+  } else if (boss.phase === 2 && boss.hp <= boss.hpMax * 0.30) {
+    boss.phase = 3;
+    boss.phaseTransitionUntil = now + 650;
+    boss.baseSpeed *= 1.15;
+    boss.cycleMs = Math.max(900, boss.cycleMs * 0.78);
+    playBossRoarSound();
+    playAlertStinger();
+    addScreenShake(32);
+    spawnFloater(boss.x, boss.y - 130, '💀 FINAL PHASE: NO MORE HOLDING BACK', '#ffd166', 26);
+    createParticles(boss.x, boss.y, '#ffd166', 80, 16, 800);
+    // DESPERATION ATTACK (spec item J) — a guaranteed, one-time signature
+    // finisher the instant Phase 3 opens, not just "faster + more damage".
+    // Overrides whatever the boss was mid-doing; the invuln window below
+    // covers the interruption so it never looks like a state glitch.
+    boss.state = 'despWindup';
+    boss.stateTimer = 500;
+    // Blink adjacent to the player immediately — the desperation attack
+    // reads as "it's suddenly right on top of you", not a slow walk-up.
+    const despAng = Math.random() * Math.PI * 2;
+    boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, player.x + Math.cos(despAng) * 140));
+    boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, player.y + Math.sin(despAng) * 140));
+  }
+  const phaseInvuln = boss.phaseTransitionUntil !== undefined && now < boss.phaseTransitionUntil;
+  if (phaseInvuln) {
+    // Brief freeze during the transition flash — reads as a deliberate
+    // "power surge" beat rather than the boss glitching mid-attack.
+    boss.squash = 1 + Math.sin(now / 40) * 0.15;
+    return;
   }
 
   boss.stateTimer -= dt;
@@ -128,6 +198,30 @@ export function updateBossAI(
       dmg: Math.round(50 * dmgMul * ORB_DMG_MULT),
       life: 8000,
     });
+  }
+
+  // =====================================================
+  // UNIVERSAL AREA DENIAL ZONES — ticked independently of boss.state so a
+  // deployed zone keeps threatening/expiring even while the boss moves on
+  // to its next move. Each zone warns briefly (outline only, no damage)
+  // before going hot for a few seconds, then disappears — force a
+  // reposition without stacking into a permanent no-go arena.
+  // =====================================================
+  if (boss.areaZones && boss.areaZones.length) {
+    for (let i = boss.areaZones.length - 1; i >= 0; i--) {
+      const z = boss.areaZones[i];
+      if (now > z.expiresAt) {
+        boss.areaZones.splice(i, 1);
+        continue;
+      }
+      if (now >= z.warnUntil && !tank.mounted) {
+        const d = Math.hypot(player.x - z.x, player.y - z.y);
+        if (d < z.r) {
+          applyPlayerDamage(30 * dmgMul * (dt / 1000));
+          if (Math.random() < 0.15) createParticles(player.x, player.y, '#c1440e', 2, 5, 200);
+        }
+      }
+    }
   }
 
   // =====================================================
@@ -260,11 +354,11 @@ export function updateBossAI(
       boss.baseSpeed *= 1.4;
       addScreenShake(28);
       playBossRoarSound();
-      spawnFloater(boss.x, boss.y - 110, '💀 BERSERKER RAGE ACTIVATED! KEEP MOVING!', '#588157', 24);
-      createParticles(boss.x, boss.y, '#588157', 60, 14, 700);
+      spawnFloater(boss.x, boss.y - 110, '💀 BERSERKER RAGE ACTIVATED! KEEP MOVING!', '#8b1a3f', 24);
+      createParticles(boss.x, boss.y, '#8b1a3f', 60, 14, 700);
     }
     if (boss.gimmickActive && Math.random() < 0.3) {
-      createParticles(boss.x + (Math.random()-0.5)*60, boss.y + (Math.random()-0.5)*60, '#588157', 2, 5, 200);
+      createParticles(boss.x + (Math.random()-0.5)*60, boss.y + (Math.random()-0.5)*60, '#8b1a3f', 2, 5, 200);
     }
   }
 
@@ -284,6 +378,34 @@ export function updateBossAI(
     boss.facingAng = ang;
     const dToPlayer = Math.hypot(player.x - boss.x, player.y - boss.y);
 
+    // Movement variety (phase 2+): instead of always closing distance,
+    // occasionally reposition — circle-strafe or briefly back off — before
+    // resuming the chase. Keeps the boss readable but not a straight line
+    // to predict every single time. Never fires while genuinely far away
+    // (it should still close distance if the player's kited it off).
+    if (boss.phase >= 2 && boss.repositionUntil === undefined && dToPlayer < 420 && dToPlayer > 140) {
+      if (Math.random() < 0.006) {
+        boss.repositionUntil = now + 700 + Math.random() * 500;
+        boss.repositionDir = Math.random() < 0.5 ? 1 : -1;
+      }
+    }
+    if (boss.repositionUntil !== undefined) {
+      if (now >= boss.repositionUntil) {
+        boss.repositionUntil = undefined;
+      } else {
+        // Strafe perpendicular to the player rather than a plain retreat —
+        // reads as "circling for an opening", not "running away".
+        const strafeAng = ang + (Math.PI / 2) * (boss.repositionDir || 1);
+        if (!boss.skin.flies || dToPlayer > 260) {
+          boss.x += Math.cos(strafeAng) * boss.baseSpeed * speedMul * 0.85;
+          boss.y += Math.sin(strafeAng) * boss.baseSpeed * speedMul * 0.85;
+        }
+        boss.squash = 1 + Math.sin(now / 90) * 0.06;
+        if (boss.skin.flies) boss.height = 60 + Math.sin(now / 260) * 12;
+        return;
+      }
+    }
+
     if (!boss.skin.flies || dToPlayer > 260) {
       boss.x += Math.cos(ang) * boss.baseSpeed * speedMul;
       boss.y += Math.sin(ang) * boss.baseSpeed * speedMul;
@@ -293,8 +415,12 @@ export function updateBossAI(
 
     if (boss.stateTimer <= 0) {
       const moves = [...boss.skin.moves];
-      if (boss.enraged) {
-        moves.push('solarBeam', 'pushSlam', 'laser', 'charge', 'spikeField');
+      if (boss.phase >= 2) {
+        moves.push('solarBeam', 'pushSlam', 'laser', 'charge', 'spikeField', 'frost', 'areaDenial', 'feint');
+      }
+      if (boss.phase >= 3) {
+        // Final phase: the complete attack vocabulary, nothing held back.
+        moves.push('teleport', 'fireball', 'spin', 'megasmash');
       }
 
       boss.moveIdx = (boss.moveIdx + 1) % (moves.length + 1);
@@ -336,7 +462,11 @@ export function updateBossAI(
         } else if (m === 'teleport') {
           boss.state = 'teleportOut';
           boss.stateTimer = 280;
-          spawnFloater(boss.x, boss.y - 100, '*shadow blink*', '#9fdb6e', 18);
+          spawnFloater(
+            boss.x, boss.y - 100,
+            boss.phase >= 2 ? '👻 PHANTOM FEINT — WATCH CLOSELY' : '*shadow blink*',
+            '#9fdb6e', 18
+          );
         } else if (m === 'spin') {
           boss.state = 'spinWindup';
           boss.stateTimer = 500;
@@ -361,15 +491,46 @@ export function updateBossAI(
           boss.stateTimer = (boss.spikeBurstsLeft + 1) * (boss.spikeBurstDelay || 850);
           playBossRoarSound();
           spawnFloater(boss.x, boss.y - 100, '🌋 GROUND SPIKES — KEEP MOVING!', '#f4a261', 20);
+        } else if (m === 'frost') {
+          boss.state = 'frostWindup';
+          boss.stateTimer = boss.enraged ? 480 : 620;
+          boss.frostAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+          boss.frostHitPlayer = false;
+          spawnFloater(boss.x, boss.y - 100, '❄️ FROST BOLT CHARGING', '#7ad6ff', 20);
+        } else if (m === 'areaDenial') {
+          boss.state = 'denialWindup';
+          boss.stateTimer = 350;
+          spawnFloater(boss.x, boss.y - 100, '🔥 MARKING DANGER ZONES', '#f4a261', 20);
+        } else if (m === 'feint') {
+          // FEINT → CHARGE combo (spec item 4): boss commits to the
+          // instantly-recognizable slam windup, then cancels straight into
+          // a real charge lock instead of following through. Rare enough
+          // (only reachable via the move rotation, not spammed) that the
+          // player learns not to auto-dodge the first read every time.
+          boss.state = 'anticipate';
+          boss.stateTimer = boss.enraged ? 420 : 550;
+          boss.squash = 0.65;
+          boss.feintInto = 'charge';
+          spawnFloater(boss.x, boss.y - 100, BOSS_TELEGRAPHS[Math.floor(Math.random() * BOSS_TELEGRAPHS.length)], '#ffcf5c', 20);
         }
       }
     }
   } else if (boss.state === 'anticipate') {
     if (boss.stateTimer <= 0) {
-      boss.state = 'rising';
-      boss.stateTimer = 400;
-      boss.vHeight = 15;
-      boss.squash = 1.35;
+      if (boss.feintInto === 'charge') {
+        // The cancel — this is the "wait, that wasn't the real attack" beat.
+        boss.feintInto = undefined;
+        boss.state = 'chargeWindup';
+        boss.stateTimer = 260; // short: the slam windup already telegraphed the intent
+        boss.chargeAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+        addScreenShake(8);
+        spawnFloater(boss.x, boss.y - 110, '👹 FEINT — IT WAS A CHARGE!', '#ff4d5e', 20);
+      } else {
+        boss.state = 'rising';
+        boss.stateTimer = 400;
+        boss.vHeight = 15;
+        boss.squash = 1.35;
+      }
     }
   } else if (boss.state === 'rising') {
     boss.height += boss.vHeight;
@@ -545,8 +706,21 @@ export function updateBossAI(
   } else if (boss.state === 'chargeRecover') {
     boss.squash = 0.92;
     if (boss.stateTimer <= 0) {
-      boss.state = 'chasing';
-      boss.stateTimer = boss.cycleMs;
+      // COMBO: CHARGE → SLAM. Occasionally, phase 2+, the recovery isn't
+      // actually the end of the exchange — the boss plants and immediately
+      // raises for an overhead slam. Rolled once, not guaranteed, so it
+      // stays a "combo table" entry rather than every charge auto-chaining.
+      if (boss.phase >= 2 && Math.random() < COMBO_CHANCE) {
+        boss.state = 'anticipate';
+        boss.stateTimer = 380;
+        boss.squash = 0.65;
+        boss.leapTargetX = player.x;
+        boss.leapTargetY = player.y;
+        spawnFloater(boss.x, boss.y - 100, '⚡➜💥 FOLLOW-UP SLAM!', '#ffcf5c', 20);
+      } else {
+        boss.state = 'chasing';
+        boss.stateTimer = boss.cycleMs;
+      }
     }
   } else if (boss.state === 'laserWindup') {
     boss.squash = 1.2;
@@ -604,8 +778,17 @@ export function updateBossAI(
         });
       }
       spawnFloater(boss.x, boss.y - 100, `🌀 ${portalCount} PORTALS UNLEASH GIANTS!`, '#b98bff', 20);
-      boss.state = 'chasing';
-      boss.stateTimer = boss.cycleMs;
+      // COMBO: SUMMON → AREA DENIAL. While the player is busy with the
+      // fresh giants, phase 2+ occasionally also drops hazard zones so
+      // standing still to clean them up isn't free either.
+      if (boss.phase >= 2 && Math.random() < COMBO_CHANCE) {
+        boss.state = 'denialWindup';
+        boss.stateTimer = 350;
+        spawnFloater(boss.x, boss.y - 130, '🔥➜ MARKING DANGER ZONES!', '#f4a261', 18);
+      } else {
+        boss.state = 'chasing';
+        boss.stateTimer = boss.cycleMs;
+      }
     }
   } else if (boss.state === 'fireballWindup') {
     boss.squash = 1.15;
@@ -636,22 +819,59 @@ export function updateBossAI(
   } else if (boss.state === 'teleportOut') {
     boss.squash = Math.max(0.1, boss.squash - dt / 250);
     if (boss.stateTimer <= 0) {
-      const a = Math.random() * Math.PI * 2;
-      boss.x = player.x + Math.cos(a) * 160;
-      boss.y = player.y + Math.sin(a) * 160;
-      boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, boss.x));
-      boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, boss.y));
+      if (boss.phase >= 2) {
+        // PHANTOM FEINT — signature mechanic. Vanish, then flicker into
+        // existence at 3 candidate spots at once (2 harmless decoys, 1
+        // real). All 3 are visually identical except the real one pulses
+        // very slightly faster — a genuine, learnable tell, not a coin
+        // flip. After a readable beat, the decoys pop and only the real
+        // boss remains, immediately following up with the blink strike.
+        const spots: { x: number; y: number; real: boolean }[] = [];
+        const realIdx = Math.floor(Math.random() * 3);
+        for (let i = 0; i < 3; i++) {
+          const a = (Math.PI * 2 * i) / 3 + Math.random() * 0.6;
+          let sx = player.x + Math.cos(a) * 170;
+          let sy = player.y + Math.sin(a) * 170;
+          sx = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, sx));
+          sy = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, sy));
+          spots.push({ x: sx, y: sy, real: i === realIdx });
+        }
+        boss.phantomSpots = spots;
+        const real = spots[realIdx];
+        boss.x = real.x;
+        boss.y = real.y;
+        createParticles(boss.x, boss.y, '#9fdb6e', 15, 6);
+        boss.squash = 1.1;
+        boss.state = 'phantomTelegraph';
+        boss.stateTimer = 550;
+      } else {
+        const a = Math.random() * Math.PI * 2;
+        boss.x = player.x + Math.cos(a) * 160;
+        boss.y = player.y + Math.sin(a) * 160;
+        boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, boss.x));
+        boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, boss.y));
+        boss.squash = 1.3;
+        createParticles(boss.x, boss.y, '#9fdb6e', 25, 8);
+        boss.state = 'teleportStrike';
+        boss.stateTimer = 350;
+        spawnFloater(boss.x, boss.y - 90, '*BLINK STRIKE*', '#9fdb6e', 20);
+      }
+    }
+  } else if (boss.state === 'phantomTelegraph') {
+    if (boss.stateTimer <= 0) {
+      boss.phantomSpots = undefined;
       boss.squash = 1.3;
-      createParticles(boss.x, boss.y, '#9fdb6e', 25, 8);
+      createParticles(boss.x, boss.y, '#9fdb6e', 30, 9);
+      addScreenShake(10);
       boss.state = 'teleportStrike';
-      boss.stateTimer = 350;
+      boss.stateTimer = 320;
       spawnFloater(boss.x, boss.y - 90, '*BLINK STRIKE*', '#9fdb6e', 20);
     }
   } else if (boss.state === 'teleportStrike') {
     if (boss.stateTimer <= 0) {
       const pd = Math.hypot(player.x - boss.x, player.y - boss.y);
       if (pd < 160 && !tank.mounted) {
-        const blinkDmg = Math.round(55 * dmgMul);
+        const blinkDmg = Math.round((boss.phase >= 2 ? 68 : 55) * dmgMul);
         applyPlayerDamage(blinkDmg);
         flashVignette();
         spawnFloater(player.x, player.y - 40, `-${blinkDmg} BLINK STRIKE`, '#9fdb6e', 22);
@@ -661,8 +881,19 @@ export function updateBossAI(
         player.pushVy = Math.sin(pAng) * 10;
       }
       addScreenShake(16);
-      boss.state = 'chasing';
-      boss.stateTimer = boss.cycleMs;
+      // COMBO: TELEPORT → SLASH. After the blink strike lands (or whiffs),
+      // phase 2+ occasionally follows immediately with a fast beam slash
+      // instead of resetting to the neutral chase.
+      if (boss.phase >= 2 && Math.random() < COMBO_CHANCE) {
+        boss.state = 'laserWindup';
+        boss.stateTimer = 450;
+        boss.laserAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+        boss.laserSweepDir = Math.random() > 0.5 ? 1 : -1;
+        spawnFloater(boss.x, boss.y - 100, '👻➜🔴 FOLLOW-UP SLASH!', '#9fdb6e', 20);
+      } else {
+        boss.state = 'chasing';
+        boss.stateTimer = boss.cycleMs;
+      }
     }
   } else if (boss.state === 'spinWindup') {
     boss.squash = 0.85;
@@ -726,6 +957,130 @@ export function updateBossAI(
         boss.state = 'chasing';
         boss.stateTimer = boss.cycleMs;
       }
+    }
+  } else if (boss.state === 'frostWindup') {
+    boss.squash = 1.1;
+    if (Math.random() < 0.5) createParticles(boss.x, boss.y - boss.height, '#7ad6ff', 3, 5, 200);
+    if (boss.stateTimer <= 0) {
+      boss.state = 'frostBeam';
+      boss.stateTimer = 300; // narrow, short-lived bolt — not a sweeping beam
+      boss.frostAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+      addScreenShake(10);
+    }
+  } else if (boss.state === 'frostBeam') {
+    // FREEZE/SLOW ATTACK (spec item G): a narrow, aimed bolt — locked at
+    // fire time, not tracking — so it's dodgeable by moving off the line.
+    // On a hit it slows the player (never fully locks movement) and opens
+    // a brief follow-up window rather than being unavoidable chip damage.
+    const bx = boss.x;
+    const by = boss.y - boss.height;
+    const beamAng = boss.frostAng || 0;
+    const beamLen = 1100;
+    const dx = player.x - bx;
+    const dy = player.y - by;
+    const proj = dx * Math.cos(beamAng) + dy * Math.sin(beamAng);
+    if (proj > 0 && proj < beamLen) {
+      const perp = Math.abs(dx * -Math.sin(beamAng) + dy * Math.cos(beamAng));
+      if (perp < player.r + 20 && !tank.mounted && !boss.frostHitPlayer) {
+        const frostDmg = Math.round(24 * dmgMul);
+        applyPlayerDamage(frostDmg);
+        player.frozenUntil = now + 1500;
+        flashVignette();
+        spawnFloater(player.x, player.y - 40, '❄️ SLOWED!', '#7ad6ff', 20);
+        createParticles(player.x, player.y, '#7ad6ff', 16, 6, 400);
+        boss.frostHitPlayer = true;
+      }
+    }
+    createParticles(bx + Math.cos(beamAng) * Math.min(beamLen, Math.max(0, proj)), by + Math.sin(beamAng) * Math.min(beamLen, Math.max(0, proj)), '#7ad6ff', 3, 5, 200);
+    if (boss.stateTimer <= 0) {
+      // If it connected, capitalize immediately with a fast charge while
+      // the player is still slowed — the "follow-up opportunity" the spec
+      // asks for, without making the freeze itself unavoidable.
+      if (boss.frostHitPlayer && boss.phase >= 2) {
+        boss.state = 'chargeWindup';
+        boss.stateTimer = 420;
+        boss.chargeAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+        spawnFloater(boss.x, boss.y - 100, '❄️➜⚡ PUNISHING THE SLOW!', '#ff4d5e', 20);
+      } else {
+        boss.state = 'chasing';
+        boss.stateTimer = boss.cycleMs;
+      }
+    }
+  } else if (boss.state === 'denialWindup') {
+    boss.squash = 1.15;
+    if (boss.stateTimer <= 0) {
+      // AREA DENIAL (spec item H): 2-4 zones scattered around the player
+      // with gaps between them — a warning-only period before they go hot,
+      // then they expire on their own. Ticked independently of boss.state
+      // in the universal section above.
+      const count = 2 + (boss.phase >= 3 ? 2 : 1);
+      const zones: NonNullable<typeof boss.areaZones> = [];
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+        const dist = 60 + Math.random() * 160;
+        const zx = Math.max(bounds.minX + 70, Math.min(bounds.maxX - 70, player.x + Math.cos(a) * dist));
+        const zy = Math.max(bounds.minY + 70, Math.min(bounds.maxY - 70, player.y + Math.sin(a) * dist));
+        zones.push({ x: zx, y: zy, r: 85, warnUntil: now + 550, expiresAt: now + 550 + 3200 });
+      }
+      boss.areaZones = [...(boss.areaZones || []), ...zones];
+      addScreenShake(10);
+      spawnFloater(boss.x, boss.y - 100, '⚠️ DANGER ZONES ACTIVE!', '#f4a261', 20);
+      boss.state = 'chasing';
+      boss.stateTimer = boss.cycleMs;
+    }
+  } else if (boss.state === 'despWindup') {
+    // The one-time Phase 3 signature finisher (spec item J). Fully
+    // telegraphed — a full extra beat longer than a normal windup — so
+    // "it's suddenly next to you" still leaves a real read before it goes off.
+    boss.squash = 1.3 + Math.sin(now / 60) * 0.15;
+    if (Math.random() < 0.6) createParticles(boss.x, boss.y - boss.height, '#ffd166', 4, 7, 250);
+    if (boss.stateTimer <= 0) {
+      boss.state = 'despStrike';
+      boss.stateTimer = 260;
+      boss.facingAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+      addScreenShake(24);
+      spawnFloater(boss.x, boss.y - 130, '💀 DESPERATION STRIKE!', '#ff4d5e', 26);
+    }
+  } else if (boss.state === 'despStrike') {
+    if (boss.stateTimer <= 0) {
+      // Omnidirectional burst — expanding shockwave plus a full ring of
+      // projectiles. Big and scary-looking, but a single readable payload,
+      // not a stacked wall of unavoidable damage.
+      const waveDmg = Math.round(45 * dmgMul);
+      shockwaves.push({
+        id: Math.random().toString(),
+        x: boss.x, y: boss.y,
+        r: 40, maxR: 480,
+        dmg: waveDmg, speed: 13,
+        color: '#ff4d5e', pushForce: 16,
+      });
+      const count = 8;
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2;
+        bullets.push({
+          id: Math.random().toString(),
+          x: boss.x,
+          y: boss.y - boss.height,
+          vx: Math.cos(a) * 7.5,
+          vy: Math.sin(a) * 7.5,
+          dmg: 24 * dmgMul,
+          cls: 'zfireball',
+          life: 1800,
+          fromBoss: true,
+          splash: 60,
+        });
+      }
+      addScreenShake(30);
+      createParticles(boss.x, boss.y, '#ff4d5e', 70, 16, 700);
+      playExplosionSound();
+      boss.state = 'despRecover';
+      boss.stateTimer = 900; // long, real punish window — the payoff for surviving it
+    }
+  } else if (boss.state === 'despRecover') {
+    boss.squash = 0.85;
+    if (boss.stateTimer <= 0) {
+      boss.state = 'chasing';
+      boss.stateTimer = boss.cycleMs;
     }
   }
 }

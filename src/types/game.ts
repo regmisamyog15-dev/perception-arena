@@ -137,7 +137,7 @@ export interface Boss {
   baseSpeed: number;
   color: string;
   dead: boolean;
-  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField';
+  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField' | 'frostWindup' | 'frostBeam' | 'denialWindup' | 'despWindup' | 'despStrike' | 'despRecover';
   stateTimer: number;
   targetAng: number;
   facingAng: number;
@@ -154,8 +154,12 @@ export interface Boss {
   isGuardian?: boolean;
   isFinal?: boolean;
   doorIndex?: number;
-  phase: 1 | 2;
+  phase: 1 | 2 | 3;
   enraged: boolean;
+  phaseTransitionUntil?: number; // brief invulnerability + telegraph window during a phase change
+  phantomSpots?: { x: number; y: number; real: boolean }[]; // Phantom Feint decoys
+  repositionUntil?: number; // timestamp — boss is strafing/repositioning instead of closing distance
+  repositionDir?: number;   // 1 or -1, which way it's circling
   laserAng?: number;
   laserSweepDir?: number;
   laserTimer?: number;
@@ -189,6 +193,13 @@ export interface Boss {
   portalCheckAt?: number;
   // Universal yellow orb volley — every boss, independent of gimmick/moveset
   orbCheckAt?: number;
+  // Freeze/Slow beam — narrow aimed bolt that slows the player on hit (phase 2+)
+  frostAng?: number;
+  frostHitPlayer?: boolean; // tracks whether it connected, to unlock a follow-up chain
+  // Area Denial — 2-4 short-lived hazard zones the player must reposition out of
+  areaZones?: { x: number; y: number; r: number; warnUntil: number; expiresAt: number }[];
+  // Feint — boss commits to one recognizable windup, then cancels into a different attack
+  feintInto?: 'charge';
 }
 
 // Big slow projectile fired by any boss roughly once a minute. Travels in a

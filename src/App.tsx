@@ -52,7 +52,7 @@ import {
 } from './audio/sound';
 import { generateWorldStructures } from './game/structures';
 import { updateTowersAndClimbing } from './game/towerLogic';
-import { updateBossAI } from './game/bossLogic';
+import { updateBossAI, shatterPhantomDecoy } from './game/bossLogic';
 import { renderGameScene } from './game/renderWorld';
 import { preloadAllSprites } from './game/sprites';
 import {
@@ -79,6 +79,7 @@ import {
   toggleEquipPowerStand,
 } from './game/superpowerLogic';
 import { ShopModal } from './components/ShopModal';
+import { WorldMap } from './components/WorldMap';
 import { GameHUD } from './components/GameHUD';
 import StartScreen from './components/StartScreen';
 
@@ -102,6 +103,8 @@ export default function App() {
   // React State for UI & Modals
   const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover'>('start');
   const [shopOpen, setShopOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [pinnedDoorIndex, setPinnedDoorIndex] = useState<number | null>(null);
   const [highScore, setHighScore] = useState(() => {
     try {
       return parseInt(localStorage.getItem('perception_arena_highscore') || '0', 10);
@@ -494,6 +497,14 @@ export default function App() {
       const boss = ent as Boss;
       const gimmick = boss.skin.gimmick;
 
+      // Brief invulnerability during a phase-transition flash — prevents a
+      // lucky burst from skipping the telegraph and chain-triggering both
+      // transitions in the same instant.
+      if (boss.phaseTransitionUntil !== undefined && performance.now() < boss.phaseTransitionUntil) {
+        spawnFloatingText(boss.x, boss.y - boss.r - 30, 'SURGING...', '#ffd166', 13);
+        return;
+      }
+
       // G2: Warlock Soul Shield — ranged attacks blocked while shield active
       if (gimmick === 'shield_of_souls' && boss.gimmickActive && boss.soulShieldHp && boss.soulShieldHp > 0) {
         if (isRanged !== false) {
@@ -551,9 +562,11 @@ export default function App() {
       // actually matter: tank a committed attack and it barely dents them,
       // dodge it clean and the recovery window afterward is wide open.
       const isRecovering = boss.state === 'chargeRecover' || boss.state === 'tripped' ||
+        boss.state === 'despRecover' ||
         (boss.state === 'landing' && (boss.height || 0) <= 0);
       const isCommitted = boss.state === 'charging' || boss.state === 'spinning' ||
-        boss.state === 'laserSweep' || boss.state === 'solarBeam' || boss.state === 'airborne';
+        boss.state === 'laserSweep' || boss.state === 'solarBeam' || boss.state === 'airborne' ||
+        boss.state === 'despStrike';
       if (isRecovering) {
         dmgMultiplier *= 1.6;
         if (Math.random() < 0.35) spawnFloatingText(boss.x, boss.y - boss.r - 40, 'PUNISH!', '#7ee787', 15);
@@ -642,13 +655,41 @@ export default function App() {
         damageEntity(t, dmg * (1 - dist / (radius * 1.5)));
       }
     }
-  }, [createParticles, damageEntity]);
+
+    // Phantom Feint decoys — AOE can shatter them too, same as melee/bullets.
+    if (hitsBoss && engineRef.current.boss?.state === 'phantomTelegraph' && engineRef.current.boss.phantomSpots) {
+      const boss = engineRef.current.boss;
+      for (let i = boss.phantomSpots.length - 1; i >= 0; i--) {
+        const spot = boss.phantomSpots[i];
+        if (spot.real) continue;
+        const dist = Math.hypot(spot.x - x, spot.y - y);
+        if (dist < radius + boss.r) {
+          shatterPhantomDecoy(boss, i, createParticles, spawnFloatingText, addScreenShake);
+        }
+      }
+    }
+  }, [createParticles, damageEntity, spawnFloatingText, addScreenShake]);
 
   const handleBossDeath = useCallback((b: Boss) => {
     spawnFloatingText(b.x, b.y, `${b.skin.name} DEFEATED!`, '#ffd166', 30);
-    engineRef.current.screenShake = 40;
+    engineRef.current.screenShake = 46;
     playExplosionSound();
-    createParticles(b.x, b.y, b.skin.color, 150, 20, 1500);
+    // Layered death burst instead of one flat particle dump — a quick
+    // color/size progression (core flash -> boss-color shockwave -> embers)
+    // reads as a real collapse rather than a single pop.
+    createParticles(b.x, b.y, '#ffffff', 30, 10, 350);
+    createParticles(b.x, b.y, b.skin.color, 110, 18, 1300);
+    createParticles(b.x, b.y, '#ffd166', 40, 22, 900);
+    engineRef.current.particles.push({
+      id: Math.random().toString(),
+      x: b.x,
+      y: b.y,
+      isFlash: true,
+      r: b.r * 4.2,
+      life: 400,
+      maxLife: 400,
+      color: 'rgba(255, 255, 255, 0.55)',
+    });
     addAtoms(250 + engineRef.current.wave * 40);
     engineRef.current.bossesDefeated += 1;
 
@@ -886,7 +927,27 @@ export default function App() {
         }
       }
     }
-  }, [damageEntity, spawnFloatingText]);
+
+    // Phantom Feint decoys — the actual "hit the clones to find the real
+    // boss" interaction. Same arc/range check as a normal melee swing;
+    // a decoy shatters instead of taking damage.
+    if (engineRef.current.boss?.state === 'phantomTelegraph' && engineRef.current.boss.phantomSpots) {
+      const boss = engineRef.current.boss;
+      for (let i = boss.phantomSpots.length - 1; i >= 0; i--) {
+        const spot = boss.phantomSpots[i];
+        if (spot.real) continue;
+        const dist = Math.hypot(spot.x - player.x, spot.y - player.y);
+        if (dist < range + boss.r) {
+          const tAng = Math.atan2(spot.y - player.y, spot.x - player.x);
+          let diff = Math.abs(tAng - ang);
+          if (diff > Math.PI) diff = Math.PI * 2 - diff;
+          if (diff < arc / 2) {
+            shatterPhantomDecoy(boss, i, createParticles, spawnFloatingText, addScreenShake);
+          }
+        }
+      }
+    }
+  }, [damageEntity, spawnFloatingText, createParticles, addScreenShake]);
 
   // Ground Slam — a boss-style AOE smash, part of base kit (not skill-gated)
   const performGroundSlam = useCallback(() => {
@@ -936,6 +997,20 @@ export default function App() {
         ent.y += Math.sin(a) * 60;
       }
     }
+
+    // Phantom Feint decoys — Ground Slam is an AOE, so it can shatter one too.
+    if (eng.boss?.state === 'phantomTelegraph' && eng.boss.phantomSpots) {
+      const boss = eng.boss;
+      for (let i = boss.phantomSpots.length - 1; i >= 0; i--) {
+        const spot = boss.phantomSpots[i];
+        if (spot.real) continue;
+        const d = Math.hypot(spot.x - player.x, spot.y - player.y);
+        if (d < RADIUS + boss.r) {
+          shatterPhantomDecoy(boss, i, createParticles, spawnFloatingText, addScreenShake);
+        }
+      }
+    }
+
     createParticles(player.x, player.y, '#ffb703', 20, 8, 400);
     spawnFloatingText(player.x, player.y - 50, '💥 GROUND SLAM!', '#ffb703', 20);
   }, [addScreenShake, createParticles, damageEntity, spawnFloatingText]);
@@ -995,7 +1070,10 @@ export default function App() {
     const now = performance.now();
     const fireRate = activeWpn.rate || (activeWpn as any).fireRate || 250;
     const rapidBonus = 1 - (player.upgrades.rapidFire || 0) * 0.12;
-    if (now - player.lastShot < fireRate * rapidBonus) return;
+    // Alpha Watchtower vantage point — 1.6x faster fire rate while standing on it
+    const onAlphaTower = player.onTowerId === 'tower-center-north';
+    const alphaTowerMul = onAlphaTower ? 1 / 1.6 : 1;
+    if (now - player.lastShot < fireRate * rapidBonus * alphaTowerMul) return;
 
     if (activeWpn.ammoBased && activeWpn.ammo !== undefined && activeWpn.ammo <= 0) return;
     if (!activeWpn.infinite && activeWpn.dur !== undefined && activeWpn.dur <= 0) return;
@@ -1583,6 +1661,7 @@ export default function App() {
       unlockAudio();
       engineRef.current.keys[e.key.toLowerCase()] = true;
       if (e.key === 'b' || e.key === 'B') setShopOpen((prev) => !prev);
+      if (e.key === 'm' || e.key === 'M') setMapOpen((prev) => !prev);
       if (e.key === 'q' || e.key === 'Q') performMelee();
       if (e.key === 'g' || e.key === 'G') throwGrenade();
       if (e.key === 'e' || e.key === 'E') useConsumable();
@@ -1670,7 +1749,7 @@ export default function App() {
       const dt = Math.min(100, time - eng.lastTime);
       eng.lastTime = time;
 
-      if (gameState === 'playing' && !shopOpen) {
+      if (gameState === 'playing' && !shopOpen && !mapOpen) {
         eng.gameTime += dt;
         eng.airdropTimer -= dt;
         eng.bossTimer -= dt;
@@ -1695,8 +1774,11 @@ export default function App() {
           moveY *= 0.7071;
         }
 
-        const currentSpeed = tank.mounted ? (4.8 + (tank.speedLevel || 0) * 0.75) : player.speed;
         const nowTs = performance.now();
+        // Freeze/Slow boss attack — player.frozenUntil is set by the frost
+        // bolt in bossLogic.ts. Slows, never fully locks, movement.
+        const slowMul = !tank.mounted && nowTs < player.frozenUntil ? 0.45 : 1;
+        const currentSpeed = tank.mounted ? (4.8 + (tank.speedLevel || 0) * 0.75) : player.speed * slowMul;
         if (!tank.mounted && nowTs < player.dashLockedUntil) {
           player.x += player.dashVx;
           player.y += player.dashVy;
@@ -2176,6 +2258,22 @@ export default function App() {
               }
             }
 
+            // Phantom Feint decoys — a bullet landing on a decoy shatters it
+            // (consumed, no damage) instead of passing through untouched.
+            if (!hit && !b.noBossDamage && eng.boss?.state === 'phantomTelegraph' && eng.boss.phantomSpots) {
+              const boss = eng.boss;
+              for (let di = boss.phantomSpots.length - 1; di >= 0; di--) {
+                const spot = boss.phantomSpots[di];
+                if (spot.real) continue;
+                const dDecoy = distToSegment(spot.x, spot.y, prevX, prevY, b.x, b.y);
+                if (dDecoy < boss.r + 8) {
+                  shatterPhantomDecoy(boss, di, createParticles, spawnFloatingText, addScreenShake);
+                  hit = true;
+                  break;
+                }
+              }
+            }
+
             // Bullet hitting a Boss Orb — shoot it down before it connects
             if (!hit) {
               for (let oi = eng.bossOrbs.length - 1; oi >= 0; oi--) {
@@ -2467,6 +2565,7 @@ export default function App() {
   }, [
     gameState,
     shopOpen,
+    mapOpen,
     performMelee,
     shootWeapon,
     throwGrenade,
@@ -2735,7 +2834,10 @@ export default function App() {
           superpowers={engineRef.current.superpowers}
           soldiers={engineRef.current.soldiers}
           base={engineRef.current.base}
+          doors={engineRef.current.doors}
+          pinnedDoorIndex={pinnedDoorIndex}
           onOpenShop={() => setShopOpen(true)}
+          onOpenMap={() => setMapOpen(true)}
           onPerformMelee={performMelee}
           onSelectSlot={(idx) => {
             if (engineRef.current.player.slots[idx]) engineRef.current.player.activeSlot = idx;
@@ -2796,6 +2898,18 @@ export default function App() {
           onRepairTowers={handleRepairTowers}
           onToggleEquipSkill={handleToggleEquipSkill}
           onClose={() => setShopOpen(false)}
+        />
+      )}
+
+      {/* World Map — pin a door and track its bearing via the compass ring */}
+      {mapOpen && (
+        <WorldMap
+          doors={engineRef.current.doors}
+          playerX={engineRef.current.player.x}
+          playerY={engineRef.current.player.y}
+          pinnedDoorIndex={pinnedDoorIndex}
+          onPin={setPinnedDoorIndex}
+          onClose={() => setMapOpen(false)}
         />
       )}
     </div>
