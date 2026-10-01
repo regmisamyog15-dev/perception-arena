@@ -85,6 +85,12 @@ import StartScreen from './components/StartScreen';
 const SAVE_KEY = 'perception_arena_save';
 const MAX_DEATHS = 3; // player gets 3 free respawns at base; the 4th death is a full game over + save wipe
 
+// Perf budgets (see PERF notes in the PR): hard caps so a long fight can't grow these lists without limit.
+const MAX_PARTICLES = 400;
+const MAX_FLOATERS = 60;
+// Recycled plain spark particles (createParticles only).
+const particlePool: Particle[] = [];
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -175,6 +181,10 @@ export default function App() {
     setHasSavedGame(false);
   }, []);
 
+  // Last HUD sync — the HUD is display-only, so it is pushed to React at ~15 Hz
+  // (or immediately when a discrete value changes) instead of every frame.
+  const hudSyncRef = useRef({ t: 0, slot: -1, hasBoss: false, tag: '', tankMounted: false, door: 0, slam: 0, phase: 0, enraged: false });
+
   // Reactive state for HUD
   const [hudState, setHudState] = useState({
     hp: 500,
@@ -219,6 +229,12 @@ export default function App() {
   const syncShopState = useCallback(() => {
     setHudState((h) => ({ ...h, atoms: engineRef.current.atoms }));
   }, []);
+
+  // The HUD is throttled (~15 Hz), so make sure the shop never opens showing a
+  // balance that is a few frames old.
+  useEffect(() => {
+    if (shopOpen) syncShopState();
+  }, [shopOpen, syncShopState]);
 
   // Engine persistent refs
   const engineRef = useRef({
@@ -357,6 +373,8 @@ export default function App() {
   }, []);
 
   const spawnFloatingText = useCallback((x: number, y: number, text: string, color = '#fff', size = 16) => {
+    // Perf: bound the list so a long fight can't grow it without limit.
+    if (engineRef.current.floaters.length >= MAX_FLOATERS) engineRef.current.floaters.shift();
     engineRef.current.floaters.push({
       id: Math.random().toString(),
       x,
@@ -370,20 +388,40 @@ export default function App() {
   }, []);
 
   const createParticles = useCallback((x: number, y: number, color: string, count: number, speedMax: number, lifeMax = 400) => {
-    for (let i = 0; i < count; i++) {
+    const list = engineRef.current.particles;
+    // Perf: hard cap on live particles; big fights degrade to fewer sparks
+    // instead of growing the array (and the draw cost) without limit.
+    const room = MAX_PARTICLES - list.length;
+    const n = count < room ? count : room;
+    for (let i = 0; i < n; i++) {
       const ang = Math.random() * Math.PI * 2;
       const spd = Math.random() * speedMax;
-      engineRef.current.particles.push({
-        id: Math.random().toString(),
-        x,
-        y,
-        vx: Math.cos(ang) * spd,
-        vy: Math.sin(ang) * spd,
-        color,
-        life: lifeMax,
-        maxLife: lifeMax,
-        r: Math.random() * 4 + 1,
-      });
+      // Perf: reuse a recycled spark instead of allocating a new object + id string.
+      const p = particlePool.pop();
+      if (p) {
+        p.x = x;
+        p.y = y;
+        p.vx = Math.cos(ang) * spd;
+        p.vy = Math.sin(ang) * spd;
+        p.color = color;
+        p.life = lifeMax;
+        p.maxLife = lifeMax;
+        p.r = Math.random() * 4 + 1;
+        list.push(p);
+      } else {
+        list.push({
+          id: Math.random().toString(),
+          x,
+          y,
+          vx: Math.cos(ang) * spd,
+          vy: Math.sin(ang) * spd,
+          color,
+          life: lifeMax,
+          maxLife: lifeMax,
+          r: Math.random() * 4 + 1,
+          pooled: true,
+        });
+      }
     }
   }, []);
 
@@ -2276,7 +2314,12 @@ export default function App() {
             p.vy = (p.vy || 0) * 0.95 + 0.12;
           }
           p.life -= dt;
-          if (p.life <= 0) eng.particles.splice(i, 1);
+          if (p.life <= 0) {
+            // Swap-remove (order is irrelevant for particles) and recycle plain sparks.
+            const last = eng.particles.pop() as Particle;
+            if (last !== p) eng.particles[i] = last;
+            if (p.pooled && particlePool.length < MAX_PARTICLES) particlePool.push(p);
+          }
         }
 
         for (let i = eng.decals.length - 1; i >= 0; i--) {
@@ -2296,7 +2339,34 @@ export default function App() {
         eng.camX = player.x - eng.cw / 2;
         eng.camY = player.y - eng.ch / 2;
 
-        // Reactive HUD update
+        // Reactive HUD update (throttled: setHudState re-renders the whole App tree)
+        const hs = hudSyncRef.current;
+        const nearDoorNow = eng.doors.find((d) => Math.hypot(player.x - d.x, player.y - d.y) < 110) || null;
+        const nearDoorIdx = nearDoorNow ? nearDoorNow.index : 0;
+        const slamUsed = (player as any).groundSlamLastUsed || 0;
+        const bossTag = eng.boss ? eng.boss.state : '';
+        const bossPhaseNow = eng.boss?.phase || 1;
+        const bossEnragedNow = eng.boss?.enraged || false;
+        const hudDue =
+          time - hs.t >= 66 ||
+          hs.slot !== player.activeSlot ||
+          hs.hasBoss !== !!eng.boss ||
+          hs.tag !== bossTag ||
+          hs.tankMounted !== tank.mounted ||
+          hs.door !== nearDoorIdx ||
+          hs.slam !== slamUsed ||
+          hs.phase !== bossPhaseNow ||
+          hs.enraged !== bossEnragedNow;
+        if (hudDue) {
+        hs.t = time;
+        hs.slot = player.activeSlot;
+        hs.hasBoss = !!eng.boss;
+        hs.tag = bossTag;
+        hs.tankMounted = tank.mounted;
+        hs.door = nearDoorIdx;
+        hs.slam = slamUsed;
+        hs.phase = bossPhaseNow;
+        hs.enraged = bossEnragedNow;
         const activeTower = eng.towers.find((t) => t.id === player.onTowerId);
         const inBase = isEntityInsideBase(player.x, player.y, eng.base);
 
@@ -2324,14 +2394,15 @@ export default function App() {
           slots: player.slots,
           tankNear: tank.owned && Math.hypot(player.x - tank.x, player.y - tank.y) < 110,
           tankMounted: tank.mounted,
-          nearDoor: eng.doors.find((d) => Math.hypot(player.x - d.x, player.y - d.y) < 110) || null,
+          nearDoor: nearDoorNow,
           onTowerName: activeTower ? activeTower.name : null,
           towerHp: activeTower ? activeTower.hp : 1000,
           towerHpMax: activeTower ? activeTower.hpMax : 1000,
           inCover: !!player.inCoverId,
           inBaseSafeZone: inBase,
-          groundSlamLastUsed: (player as any).groundSlamLastUsed || 0,
+          groundSlamLastUsed: slamUsed,
         });
+        }
       }
 
       // Render World Scene

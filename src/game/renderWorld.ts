@@ -275,6 +275,8 @@ export function renderGameScene(
 
   // Floor Decals & Blood Splatters
   for (const d of decals) {
+    // Perf: off-screen blood decals are not drawn.
+    if (d.x + d.r < camX - 50 || d.x - d.r > camX + cw + 50 || d.y + d.r < camY - 50 || d.y - d.r > camY + ch + 50) continue;
     const alpha = Math.max(0, d.life / d.maxLife);
     ctx.save();
     ctx.globalAlpha = alpha * 0.7;
@@ -828,6 +830,8 @@ export function renderGameScene(
 
   // Zombies with Animated Walking & Hit Flinch
   for (const z of zombies) {
+    // Perf: skip zombies that are fully off-screen (sprite + shadow + HP bar).
+    if (z.x < camX - 150 || z.x > camX + cw + 150 || z.y < camY - 150 || z.y > camY + ch + 150) continue;
     const zAng = z.isAggro
       ? Math.atan2(player.y - z.y, player.x - z.x)
       : z.wanderAngle || 0;
@@ -1394,7 +1398,12 @@ export function renderGameScene(
   }
 
   // Bullets with Glowing Tracers & Effects
+  // Perf: canvas shadowBlur is the most expensive thing drawn per bullet, so only
+  // the first GLOW_BUDGET on-screen bullets glow; the rest draw as plain shapes.
+  let glowLeft = 30;
   for (const b of bullets) {
+    if (b.x < camX - 120 || b.x > camX + cw + 120 || b.y < camY - 120 || b.y > camY + ch + 120) continue;
+    const glow = glowLeft-- > 0;
     if (b.cls === 'grenade') {
       ctx.fillStyle = '#ffb703';
       ctx.beginPath();
@@ -1405,7 +1414,7 @@ export function renderGameScene(
       ctx.stroke();
     } else if (b.cls === 'zfireball') {
       ctx.fillStyle = '#7ee787';
-      ctx.shadowBlur = 18;
+      ctx.shadowBlur = glow ? 18 : 0;
       ctx.shadowColor = '#7ee787';
       ctx.beginPath();
       ctx.arc(b.x, b.y, 9, 0, Math.PI * 2);
@@ -1419,7 +1428,7 @@ export function renderGameScene(
 
       ctx.fillStyle = '#ffcf5c';
       ctx.shadowColor = '#ff6b35';
-      ctx.shadowBlur = 15;
+      ctx.shadowBlur = glow ? 15 : 0;
       ctx.beginPath();
       ctx.moveTo(-16, 0);
       ctx.lineTo(-4, -4);
@@ -1439,7 +1448,7 @@ export function renderGameScene(
       ctx.restore();
     } else if (b.cls === 'zombiebullet') {
       ctx.fillStyle = b.isRpg ? '#ff8c42' : '#ff6b81';
-      ctx.shadowBlur = b.isRpg ? 14 : 8;
+      ctx.shadowBlur = glow ? b.isRpg ? 14 : 8 : 0;
       ctx.shadowColor = ctx.fillStyle;
 
       ctx.strokeStyle = ctx.fillStyle;
@@ -1457,7 +1466,7 @@ export function renderGameScene(
       ctx.strokeStyle = '#83d3e1';
       ctx.lineWidth = 3;
       ctx.shadowColor = '#83d3e1';
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = glow ? 10 : 0;
       ctx.beginPath();
       ctx.moveTo(b.x - b.vx * 1.8, b.y - b.vy * 1.8);
       ctx.lineTo(b.x, b.y);
@@ -1467,7 +1476,7 @@ export function renderGameScene(
       ctx.strokeStyle = '#ffd166';
       ctx.lineWidth = 3.5;
       ctx.shadowColor = '#ffd166';
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = glow ? 12 : 0;
       ctx.beginPath();
       ctx.moveTo(b.x - b.vx * 1.8, b.y - b.vy * 1.8);
       ctx.lineTo(b.x, b.y);

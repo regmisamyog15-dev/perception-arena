@@ -277,6 +277,8 @@ export interface Particle {
   isCasing?: boolean;
   isMuzzleFlash?: boolean;
   isSmoke?: boolean;
+  /** Plain spark particle owned by the particle pool (see createParticles). */
+  pooled?: boolean;
 }
 
 export interface Floater {
