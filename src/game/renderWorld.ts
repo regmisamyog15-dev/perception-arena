@@ -1263,7 +1263,7 @@ export function renderGameScene(
     }
 
     const spriteOk = drawBossSprite(ctx, boss.skin.key, boss.facingAng, bossAnim, bossNow, bossDestSize, {
-      alpha: boss.state === 'teleportOut' ? Math.max(0.15, boss.squash) : 1,
+      alpha: boss.state === 'teleportOut' ? Math.max(0, Math.min(1, boss.stateTimer / (boss.jumpscare ? 380 : 280))) : 1,
     });
 
     if (!spriteOk) {
@@ -1362,14 +1362,18 @@ export function renderGameScene(
     ctx.save();
     ctx.translate(player.x, player.y - elev);
     const pAng = Math.atan2(mouse.y + camY - (player.y - elev), mouse.x + camX - player.x);
-    const bodyTint = player.onTowerId
+    // Heavy hit (>20 dmg) turns the whole skin red for a moment
+    const hurtRed = (player.hurtUntil || 0) > performance.now();
+    const bodyTint = hurtRed
+      ? '#ff2d3d'
+      : player.onTowerId
       ? '#90e0ef'
       : player.onBoxId
         ? '#ffd166'
         : player.inCoverId
           ? '#7ee787'
           : '#83d3e1';
-    const armorTint = ['#83d3e1', '#8fdcc9', '#a0e0a0', '#e0d17e', '#e0a06a', '#ffcf5c'][player.armorLevel] || bodyTint;
+    const armorTint = hurtRed ? '#ff6b6b' : ['#83d3e1', '#8fdcc9', '#a0e0a0', '#e0d17e', '#e0a06a', '#ffcf5c'][player.armorLevel] || bodyTint;
 
     // Legs
     ctx.strokeStyle = '#1c2b30';

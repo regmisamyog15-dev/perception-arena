@@ -18,6 +18,17 @@ export const ORB_SPEED = 2.6; // px/frame — well under player.speed (6.2), so 
 export const ORB_HP = 55; // how much player bullet damage it takes to shoot down
 export const ORB_DMG_MULT = 1.0;
 
+// Boss summons: giant portal zombies are capped, runner packs come on a clock.
+export const BOSS_SUMMON_CAP = 4; // max boss-summoned (portal) zombies alive at once
+export const RUNNER_WAVE_INTERVAL_MS = 60000; // a pack of fast runners every minute
+export const RUNNER_WAVE_COUNT = 5;
+export const RUNNER_WAVE_HP_MUL = 3; // runners in the pack carry extra health
+// Jumpscare: boss vanishes in a cloud and reappears right next to the player.
+export const JUMPSCARE_INTERVAL_MS = 22000;
+export const JUMPSCARE_INTERVAL_ENRAGED_MS = 14000;
+// Super attacks (leap/megasmash, beams, charge, blink strike, spikes, finisher) hit a bit harder.
+export const BOSS_SUPER_DMG_MUL = 1.2;
+
 // Resurrection Pod — floating sci-fi/arcane healing chamber for downed soldiers
 export const REVIVE_POD_COST = 1500;
 export const REVIVE_POD_HEAL_MS = 14000; // time to fully heal once placed in the pod

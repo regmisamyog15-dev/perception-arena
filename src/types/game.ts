@@ -72,6 +72,8 @@ export interface PlayerState {
   };
   pushVx?: number;
   pushVy?: number;
+  /** Timestamp (performance.now) until which the player is drawn red after a heavy hit. */
+  hurtUntil?: number;
 }
 
 export interface Zombie {
@@ -98,6 +100,8 @@ export interface Zombie {
   lastShot?: number;
   nextFire?: number;
   dead?: boolean;
+  /** Born from a boss portal; counts toward the 4-at-once summon cap. */
+  summoned?: boolean;
   push?: boolean;
   isAggro?: boolean;
   wanderAngle?: number;
@@ -191,6 +195,11 @@ export interface Boss {
   chargeHitPlayer?: boolean;
   // Universal portal summon system — every boss, independent of gimmick/moveset
   portalCheckAt?: number;
+  // Runner pack: 5 fast, extra-health runners every minute
+  runnerWaveAt?: number;
+  // Jumpscare: vanish in a cloud, reappear right next to the player
+  jumpscareAt?: number;
+  jumpscare?: boolean;
   // Universal yellow orb volley — every boss, independent of gimmick/moveset
   orbCheckAt?: number;
   // Freeze/Slow beam — narrow aimed bolt that slows the player on hit (phase 2+)
@@ -318,6 +327,10 @@ export interface Crack {
   y: number;
   time: number;
   type: 'shambler' | 'runner' | 'gunner' | 'rpgz' | 'ztank';
+  /** Health multiplier applied when the portal births its zombie (runner pack). */
+  hpMul?: number;
+  /** Skips the boss-summon cap (runner pack is its own timed event). */
+  bypassCap?: boolean;
 }
 
 export interface Decal {

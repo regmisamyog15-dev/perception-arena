@@ -2,6 +2,8 @@ import { Boss, PlayerState, Shockwave, Crack, Tank, Bullet, BossOrb } from '../t
 import {
   BOSS_TELEGRAPHS, BOSS_QUOTES, CHARGE_LANE_LEN,
   PORTAL_INTERVAL_MS, PORTAL_INTERVAL_ENRAGED_MS,
+  BOSS_SUMMON_CAP, RUNNER_WAVE_INTERVAL_MS, RUNNER_WAVE_COUNT, RUNNER_WAVE_HP_MUL,
+  JUMPSCARE_INTERVAL_MS, JUMPSCARE_INTERVAL_ENRAGED_MS, BOSS_SUPER_DMG_MUL,
   ORB_INTERVAL_MS, ORB_INTERVAL_ENRAGED_MS, ORB_SPEED, ORB_HP, ORB_DMG_MULT,
 } from './constants';
 import { playExplosionSound, playBossRoarSound, playAlertStinger } from '../audio/sound';
@@ -12,6 +14,18 @@ import { playExplosionSound, playBossRoarSound, playAlertStinger } from '../audi
 // everything. Phase-gated and rolled once per opportunity so it reads as an
 // occasional "oh, it's not done" rather than a permanent combo lock.
 const COMBO_CHANCE = 0.32;
+
+// Smoke-cloud burst used when the boss vanishes / reappears (slow, long-lived puffs).
+function cloudBurst(
+  createParticles: (x: number, y: number, color: string, count: number, speedMax: number, lifeMax?: number) => void,
+  x: number,
+  y: number,
+  big = false
+) {
+  createParticles(x, y, '#8d8d9e', big ? 40 : 26, 3.2, 900);
+  createParticles(x, y, '#3b3b4a', big ? 26 : 16, 2.4, 1100);
+  createParticles(x, y, '#c9c9d6', big ? 16 : 10, 4.5, 650);
+}
 
 // Phantom Feint decoys are real, hittable bodies (not just a visual timer).
 // Shattering one is how the player actually solves "which one is real" —
@@ -143,6 +157,53 @@ export function updateBossAI(
   }
 
   // =====================================================
+  // RUNNER PACK — every boss: 5 speed-running zombies with extra health
+  // once a minute. Own clock; not limited by the portal-giant cap.
+  // =====================================================
+  if (boss.runnerWaveAt === undefined) {
+    boss.runnerWaveAt = now + RUNNER_WAVE_INTERVAL_MS;
+  } else if (now >= boss.runnerWaveAt) {
+    boss.runnerWaveAt = now + RUNNER_WAVE_INTERVAL_MS;
+    addScreenShake(10);
+    spawnFloater(boss.x, boss.y - 120, `🏃 ${RUNNER_WAVE_COUNT} SPEED RUNNERS INCOMING!`, '#ff8a4d', 20);
+    for (let i = 0; i < RUNNER_WAVE_COUNT; i++) {
+      const ang = (i / RUNNER_WAVE_COUNT) * Math.PI * 2 + Math.random() * 0.5;
+      const dist = 260 + Math.random() * 160;
+      cracks.push({
+        id: Math.random().toString(),
+        x: Math.max(bounds.minX + 60, Math.min(bounds.maxX - 60, player.x + Math.cos(ang) * dist)),
+        y: Math.max(bounds.minY + 60, Math.min(bounds.maxY - 60, player.y + Math.sin(ang) * dist)),
+        time: 800,
+        type: 'runner',
+        hpMul: RUNNER_WAVE_HP_MUL,
+        bypassCap: true,
+      });
+    }
+  }
+
+  // =====================================================
+  // JUMPSCARE — every boss, on a clock: vanish in a smoke cloud, then
+  // reappear right beside the player (handled in 'teleportOut' below).
+  // Only fires from the neutral chase and only if the boss is far enough
+  // away that the blink actually reads as a scare.
+  // =====================================================
+  const jumpscareInterval = boss.enraged ? JUMPSCARE_INTERVAL_ENRAGED_MS : JUMPSCARE_INTERVAL_MS;
+  if (boss.jumpscareAt === undefined) {
+    boss.jumpscareAt = now + jumpscareInterval;
+  } else if (now >= boss.jumpscareAt && boss.state === 'chasing') {
+    if (Math.hypot(player.x - boss.x, player.y - boss.y) > 320) {
+      boss.jumpscareAt = now + jumpscareInterval;
+      boss.jumpscare = true;
+      boss.state = 'teleportOut';
+      boss.stateTimer = 380;
+      cloudBurst(createParticles, boss.x, boss.y, true);
+      playAlertStinger();
+    } else {
+      boss.jumpscareAt = now + 3000; // already close — try again shortly
+    }
+  }
+
+  // =====================================================
   // UNIVERSAL PORTAL SUMMONS — every boss, on a clock, independent of
   // its gimmick or move rotation. Portals open in a ring around (but never
   // on top of) the player, count down while pulsing (the existing Crack
@@ -155,8 +216,8 @@ export function updateBossAI(
   } else if (now >= boss.portalCheckAt) {
     boss.portalCheckAt = now + portalInterval;
     addScreenShake(14);
-    spawnFloater(boss.x, boss.y - 100, '🌀 5 PORTALS UNLEASH GIANTS!', '#b98bff', 20);
-    const portalCount = 5;
+    spawnFloater(boss.x, boss.y - 100, `🌀 ${BOSS_SUMMON_CAP} PORTALS UNLEASH GIANTS!`, '#b98bff', 20);
+    const portalCount = BOSS_SUMMON_CAP;
     for (let i = 0; i < portalCount; i++) {
       const ang = (i / portalCount) * Math.PI * 2 + Math.random() * 0.3;
       const dist = 300 + Math.random() * 140; // wider ring — ztanks hit harder & take up more space
@@ -373,7 +434,7 @@ export function updateBossAI(
       boss.stateTimer = boss.cycleMs;
     }
   } else if (boss.state === 'chasing') {
-    const speedMul = (now < boss.roarBoostUntil ? 1.3 : 1) * (boss.enraged ? 1.2 : 1);
+    const speedMul = (now < boss.roarBoostUntil ? 1.3 : 1) * (boss.enraged ? 2 : 1);
     const ang = Math.atan2(player.y - boss.y, player.x - boss.x);
     boss.facingAng = ang;
     const dToPlayer = Math.hypot(player.x - boss.x, player.y - boss.y);
@@ -462,6 +523,7 @@ export function updateBossAI(
         } else if (m === 'teleport') {
           boss.state = 'teleportOut';
           boss.stateTimer = 280;
+          cloudBurst(createParticles, boss.x, boss.y);
           spawnFloater(
             boss.x, boss.y - 100,
             boss.phase >= 2 ? '👻 PHANTOM FEINT — WATCH CLOSELY' : '*shadow blink*',
@@ -556,8 +618,8 @@ export function updateBossAI(
       boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, boss.x));
       boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, boss.y));
 
-      const leapDmg = Math.round(65 * (boss.skin.leapMult || 1) * dmgMul);
-      const waveDmg = Math.round(35 * dmgMul);
+      const leapDmg = Math.round(65 * (boss.skin.leapMult || 1) * dmgMul * BOSS_SUPER_DMG_MUL);
+      const waveDmg = Math.round(35 * dmgMul * BOSS_SUPER_DMG_MUL);
       const radius = 240 + gateTier * 20;
 
       playExplosionSound();
@@ -634,7 +696,7 @@ export function updateBossAI(
       const perpDist = Math.abs(v1x * -beamVy + v1y * beamVx);
       if (perpDist < player.r + 28 && !tank.mounted) {
         // Balanced continuous solar damage (~40 dps)
-        const solarDmg = 42 * dmgMul * (dt / 1000);
+        const solarDmg = 42 * dmgMul * BOSS_SUPER_DMG_MUL * (dt / 1000);
         applyPlayerDamage(solarDmg, true);
         flashVignette();
         createParticles(player.x, player.y, '#ffd166', 2, 6);
@@ -683,7 +745,7 @@ export function updateBossAI(
       const lateral = Math.abs(dx * -Math.sin(ang) + dy * Math.cos(ang));
       const laneHalfWidth = boss.r + player.r + 15;
       if (forward > -boss.r && forward < laneHalfWidth * 2 && lateral < laneHalfWidth) {
-        const chargeDmg = Math.round(70 * (boss.skin.chargeMult || 1) * dmgMul);
+        const chargeDmg = Math.round(70 * (boss.skin.chargeMult || 1) * dmgMul * BOSS_SUPER_DMG_MUL);
         applyPlayerDamage(chargeDmg);
         flashVignette();
         spawnFloater(player.x, player.y - 40, `-${chargeDmg} RAMMED!`, '#ff4d5e', 22);
@@ -749,7 +811,7 @@ export function updateBossAI(
     if (proj > 0 && proj < beamLen) {
       const perpDist = Math.abs(v1x * -beamVy + v1y * beamVx);
       if (perpDist < player.r + 24 && !tank.mounted) {
-        applyPlayerDamage(40 * dmgMul * (dt / 1000), true);
+        applyPlayerDamage(40 * dmgMul * BOSS_SUPER_DMG_MUL * (dt / 1000), true);
         flashVignette();
         createParticles(player.x, player.y, '#ff4d5e', 3, 6);
       }
@@ -763,7 +825,7 @@ export function updateBossAI(
     if (boss.stateTimer <= 0) {
       playBossRoarSound();
       addScreenShake(18);
-      const portalCount = 5;
+      const portalCount = BOSS_SUMMON_CAP;
       for (let i = 0; i < portalCount; i++) {
         const a = (i / portalCount) * Math.PI * 2 + Math.random() * 0.3;
         const dist = 300 + Math.random() * 140;
@@ -819,7 +881,22 @@ export function updateBossAI(
   } else if (boss.state === 'teleportOut') {
     boss.squash = Math.max(0.1, boss.squash - dt / 250);
     if (boss.stateTimer <= 0) {
-      if (boss.phase >= 2) {
+      if (boss.jumpscare) {
+        // JUMPSCARE ARRIVAL: pop out of a cloud right beside the player.
+        boss.jumpscare = false;
+        const a = Math.random() * Math.PI * 2;
+        const jd = 80 + Math.random() * 40;
+        boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, player.x + Math.cos(a) * jd));
+        boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, player.y + Math.sin(a) * jd));
+        boss.squash = 1.45;
+        cloudBurst(createParticles, boss.x, boss.y, true);
+        playBossRoarSound();
+        addScreenShake(26);
+        flashVignette();
+        spawnFloater(boss.x, boss.y - 100, '👁️ RIGHT BEHIND YOU!', '#ff4d5e', 24);
+        boss.state = 'teleportStrike';
+        boss.stateTimer = 320;
+      } else if (boss.phase >= 2) {
         // PHANTOM FEINT — signature mechanic. Vanish, then flicker into
         // existence at 3 candidate spots at once (2 harmless decoys, 1
         // real). All 3 are visually identical except the real one pulses
@@ -841,6 +918,7 @@ export function updateBossAI(
         boss.x = real.x;
         boss.y = real.y;
         createParticles(boss.x, boss.y, '#9fdb6e', 15, 6);
+        cloudBurst(createParticles, boss.x, boss.y);
         boss.squash = 1.1;
         boss.state = 'phantomTelegraph';
         boss.stateTimer = 550;
@@ -852,6 +930,7 @@ export function updateBossAI(
         boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, boss.y));
         boss.squash = 1.3;
         createParticles(boss.x, boss.y, '#9fdb6e', 25, 8);
+        cloudBurst(createParticles, boss.x, boss.y);
         boss.state = 'teleportStrike';
         boss.stateTimer = 350;
         spawnFloater(boss.x, boss.y - 90, '*BLINK STRIKE*', '#9fdb6e', 20);
@@ -871,7 +950,7 @@ export function updateBossAI(
     if (boss.stateTimer <= 0) {
       const pd = Math.hypot(player.x - boss.x, player.y - boss.y);
       if (pd < 160 && !tank.mounted) {
-        const blinkDmg = Math.round((boss.phase >= 2 ? 68 : 55) * dmgMul);
+        const blinkDmg = Math.round((boss.phase >= 2 ? 68 : 55) * dmgMul * BOSS_SUPER_DMG_MUL);
         applyPlayerDamage(blinkDmg);
         flashVignette();
         spawnFloater(player.x, player.y - 40, `-${blinkDmg} BLINK STRIKE`, '#9fdb6e', 22);
@@ -938,7 +1017,7 @@ export function updateBossAI(
       const sy = boss.spikeY ?? boss.y;
       const dist = Math.hypot(player.x - sx, player.y - sy);
       if (dist < 95 && !tank.mounted) {
-        const spikeDmg = Math.round(46 * dmgMul);
+        const spikeDmg = Math.round(46 * dmgMul * BOSS_SUPER_DMG_MUL);
         applyPlayerDamage(spikeDmg);
         flashVignette();
         spawnFloater(player.x, player.y - 40, `-${spikeDmg} SPIKE!`, '#f4a261', 20);
@@ -1046,7 +1125,7 @@ export function updateBossAI(
       // Omnidirectional burst — expanding shockwave plus a full ring of
       // projectiles. Big and scary-looking, but a single readable payload,
       // not a stacked wall of unavoidable damage.
-      const waveDmg = Math.round(45 * dmgMul);
+      const waveDmg = Math.round(45 * dmgMul * BOSS_SUPER_DMG_MUL);
       shockwaves.push({
         id: Math.random().toString(),
         x: boss.x, y: boss.y,

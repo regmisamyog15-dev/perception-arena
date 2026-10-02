@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, useCallback } from 'react';
 import {
   WeaponDef,
   PlayerState,
@@ -38,6 +38,7 @@ import {
   UPGRADES,
   GATE_DEFINITIONS,
   MAX_SOLDIER_LEVEL,
+  BOSS_SUMMON_CAP,
 } from './game/constants';
 import {
   playShootSound,
@@ -46,6 +47,7 @@ import {
   playHealSound,
   playAlertStinger,
   playUpgradeSound,
+  playPlayerHurtSound,
   startBgmMusic,
   stopBgmMusic,
   unlockAudio,
@@ -78,8 +80,12 @@ import {
   updateSuperpowersActive,
   toggleEquipPowerStand,
 } from './game/superpowerLogic';
-import { ShopModal } from './components/ShopModal';
-import { WorldMap } from './components/WorldMap';
+// Code-split the two modals that only exist once opened (the shop alone is ~900 lines).
+// Prefetched shortly after load (see effect below) so the first open is still instant.
+const loadShopModal = () => import('./components/ShopModal').then((m) => ({ default: m.ShopModal }));
+const loadWorldMap = () => import('./components/WorldMap').then((m) => ({ default: m.WorldMap }));
+const ShopModal = lazy(loadShopModal);
+const WorldMap = lazy(loadWorldMap);
 import { GameHUD } from './components/GameHUD';
 import StartScreen from './components/StartScreen';
 
@@ -186,6 +192,7 @@ export default function App() {
 
   // Last HUD sync — the HUD is display-only, so it is pushed to React at ~15 Hz
   // (or immediately when a discrete value changes) instead of every frame.
+  const lastHurtSfxRef = useRef(0);
   const hudSyncRef = useRef({ t: 0, slot: -1, hasBoss: false, tag: '', tankMounted: false, door: 0, slam: 0, phase: 0, enraged: false });
 
   // Reactive state for HUD
@@ -238,6 +245,15 @@ export default function App() {
   useEffect(() => {
     if (shopOpen) syncShopState();
   }, [shopOpen, syncShopState]);
+
+  // Warm the lazy chunks once the page has settled so opening them never stutters.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      loadShopModal();
+      loadWorldMap();
+    }, 2500);
+    return () => clearTimeout(t);
+  }, []);
 
   // Engine persistent refs
   const engineRef = useRef({
@@ -813,6 +829,18 @@ export default function App() {
 
     player.hp -= finalDmg;
     flashVignette();
+
+    // Heavy hit (more than 20 in one blow): red -dmg number, red skin flash, hurt sound.
+    // Small per-frame damage-over-time ticks stay under 20 so they don't trigger this.
+    if (finalDmg > 20) {
+      const nowMs = performance.now();
+      player.hurtUntil = nowMs + 350;
+      spawnFloatingText(player.x, player.y - 50, `-${Math.round(finalDmg)}`, '#ff2d3d', 26);
+      if (nowMs - lastHurtSfxRef.current > 120) {
+        lastHurtSfxRef.current = nowMs;
+        playPlayerHurtSound();
+      }
+    }
 
     // Second Wind passive: survive a killing blow once per cooldown window
     const secondWind = engineRef.current.superpowers.second_wind;
@@ -2168,15 +2196,28 @@ export default function App() {
           const c = eng.cracks[i];
           c.time -= dt;
           if (c.time <= 0) {
+            // Boss portal giants are capped (BOSS_SUMMON_CAP alive at once). A portal that
+            // opens while the cap is full just fizzles. The runner pack bypasses the cap.
+            if (!c.bypassCap) {
+              let aliveSummoned = 0;
+              for (const zz of eng.zombies) if (zz.summoned && !zz.dead) aliveSummoned++;
+              if (aliveSummoned >= BOSS_SUMMON_CAP) {
+                createParticles(c.x, c.y, '#6b5b8a', 14, 5, 350);
+                eng.cracks.splice(i, 1);
+                continue;
+              }
+            }
             const def = ZOMBIE_TYPES[c.type];
             const gateScaling = 1 + (eng.currentGateLevel - 1) * 0.35 + (eng.wave - 1) * 0.18;
+            const hpScale = gateScaling * (c.hpMul || 1);
             eng.zombies.push({
               type: c.type,
               x: c.x,
               y: c.y,
               r: def.r,
-              hp: def.hp * gateScaling,
-              hpMax: def.hp * gateScaling,
+              hp: def.hp * hpScale,
+              hpMax: def.hp * hpScale,
+              summoned: !c.bypassCap,
               speed: def.speed * (1 + (eng.currentGateLevel - 1) * 0.05),
               dmg: def.dmg * (1 + (eng.currentGateLevel - 1) * 0.25),
               color: def.color,
@@ -2877,6 +2918,7 @@ export default function App() {
 
       {/* Shop & Upgrades Modal */}
       {shopOpen && (
+        <Suspense fallback={null}>
         <ShopModal
           atoms={hudState.atoms}
           player={engineRef.current.player}
@@ -2899,10 +2941,12 @@ export default function App() {
           onToggleEquipSkill={handleToggleEquipSkill}
           onClose={() => setShopOpen(false)}
         />
+        </Suspense>
       )}
 
       {/* World Map — pin a door and track its bearing via the compass ring */}
       {mapOpen && (
+        <Suspense fallback={null}>
         <WorldMap
           doors={engineRef.current.doors}
           playerX={engineRef.current.player.x}
@@ -2911,6 +2955,7 @@ export default function App() {
           onPin={setPinnedDoorIndex}
           onClose={() => setMapOpen(false)}
         />
+        </Suspense>
       )}
     </div>
   );

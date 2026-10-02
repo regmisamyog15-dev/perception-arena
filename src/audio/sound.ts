@@ -349,6 +349,40 @@ export function playTowerHitSound() {
   }
 }
 
+export function playPlayerHurtSound() {
+  try {
+    const ctx = getAudioCtx();
+    const now = ctx.currentTime;
+    // Low thud
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(320, now);
+    osc.frequency.exponentialRampToValueAtTime(70, now + 0.22);
+    gain.gain.setValueAtTime(0.35, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    osc.connect(gain);
+    gain.connect(sfxGain || ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.25);
+    // Short crunchy noise burst on top
+    const len = Math.floor(ctx.sampleRate * 0.12);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const noise = ctx.createBufferSource();
+    const nGain = ctx.createGain();
+    noise.buffer = buf;
+    nGain.gain.setValueAtTime(0.3, now);
+    nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    noise.connect(nGain);
+    nGain.connect(sfxGain || ctx.destination);
+    noise.start(now);
+  } catch {
+    // silent
+  }
+}
+
 export function playBossRoarSound() {
   try {
     const ctx = getAudioCtx();
