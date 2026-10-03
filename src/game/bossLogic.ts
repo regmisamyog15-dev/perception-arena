@@ -1,6 +1,10 @@
-import { Boss, PlayerState, Shockwave, Crack, Tank, Bullet, BossOrb } from '../types/game';
+import { Boss, PlayerState, Shockwave, Crack, Tank, Bullet, BossOrb, Phase3State } from '../types/game';
+import { startSplit, spawnMeteor } from './bossPhase3';
 import {
   BOSS_TELEGRAPHS, BOSS_QUOTES, CHARGE_LANE_LEN,
+  CHARGE_WINDUP_MS, CHARGE_DASH_MS, CHARGE_RECOVER_MS, CHARGE_KNOCK_GAP, SPLIT_STAT_MUL,
+  MISSILE_SPEED_MUL, MISSILE_MAX_FIRED, MISSILE_HP, MISSILE_FIRST_MS, MISSILE_GAP_MS,
+  METEOR_DMG, CRATER_DPS, THROW_SPEED, THROW_DMG,
   PORTAL_INTERVAL_MS, PORTAL_INTERVAL_ENRAGED_MS,
   BOSS_SUMMON_CAP, RUNNER_WAVE_INTERVAL_MS, RUNNER_WAVE_COUNT, RUNNER_WAVE_HP_MUL,
   JUMPSCARE_INTERVAL_MS, JUMPSCARE_INTERVAL_ENRAGED_MS, BOSS_SUPER_DMG_MUL,
@@ -62,6 +66,7 @@ export function updateBossAI(
   cracks: Crack[],
   bullets: Bullet[],
   bossOrbs: BossOrb[],
+  p3: Phase3State,
   dt: number,
   now: number,
   wave: number,
@@ -75,7 +80,7 @@ export function updateBossAI(
 ) {
   // Calculate milestone gate tier (Every 2 gates = +1 tier)
   const gateTier = boss.doorIndex ? Math.floor((boss.doorIndex - 1) / 2) : 0;
-  const dmgMul = (1 + gateTier * 0.22) * (boss.enraged ? 1.25 : 1.0);
+  const dmgMul = (1 + gateTier * 0.22) * (boss.enraged ? 1.25 : 1.0) * (boss.splitActive ? SPLIT_STAT_MUL : 1);
 
   // =====================================================
   // MULTI-PHASE FIGHT — three real phases, not just a stronger HP bar.
@@ -145,7 +150,7 @@ export function updateBossAI(
     const cdReady = boss.campPunishCd === undefined || now >= boss.campPunishCd;
     if (moved < 80 && boss.state === 'chasing' && cdReady) {
       boss.state = 'chargeWindup';
-      boss.stateTimer = 300;
+      boss.stateTimer = CHARGE_WINDUP_MS;
       boss.chargeAng = Math.atan2(player.y - boss.y, player.x - boss.x);
       boss.campPunishCd = now + 6000;
       addScreenShake(10);
@@ -241,7 +246,7 @@ export function updateBossAI(
   const orbInterval = boss.enraged ? ORB_INTERVAL_ENRAGED_MS : ORB_INTERVAL_MS;
   if (boss.orbCheckAt === undefined) {
     boss.orbCheckAt = now + orbInterval;
-  } else if (now >= boss.orbCheckAt) {
+  } else if (now >= boss.orbCheckAt && boss.phase < 3) {
     boss.orbCheckAt = now + orbInterval;
     const ang = Math.atan2(player.y - boss.y, player.x - boss.x);
     spawnFloater(boss.x, boss.y - 130, '🟡 ORB INCOMING — SHOOT OR DODGE!', '#ffd166', 20);
@@ -259,6 +264,41 @@ export function updateBossAI(
       dmg: Math.round(50 * dmgMul * ORB_DMG_MULT),
       life: 8000,
     });
+  }
+
+  // =====================================================
+  // FINAL STAND MISSILE — in phase 3 the yellow orb turns into a homing missile at
+  // 2.5x orb speed. It's only fired twice, and it can be shot down with enough
+  // bullets or caught in a grenade/rocket blast.
+  // =====================================================
+  if (
+    boss.finalStand &&
+    boss.state !== 'dizzy' &&
+    (boss.missilesFired || 0) < MISSILE_MAX_FIRED &&
+    boss.missileAt !== undefined &&
+    now >= boss.missileAt
+  ) {
+    boss.missilesFired = (boss.missilesFired || 0) + 1;
+    boss.missileAt = now + MISSILE_GAP_MS;
+    const mAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+    const mSpeed = ORB_SPEED * MISSILE_SPEED_MUL;
+    bossOrbs.push({
+      id: Math.random().toString(),
+      x: boss.x,
+      y: boss.y - boss.height,
+      vx: Math.cos(mAng) * mSpeed,
+      vy: Math.sin(mAng) * mSpeed,
+      r: 26,
+      hp: MISSILE_HP,
+      hpMax: MISSILE_HP,
+      dmg: Math.round(65 * dmgMul),
+      life: 9000,
+      kind: 'missile',
+      speed: mSpeed,
+    });
+    addScreenShake(12);
+    createParticles(boss.x, boss.y, '#ffd166', 24, 9, 450);
+    spawnFloater(boss.x, boss.y - 130, '🚀 HOMING MISSILE — GRENADE IT OR SHOOT IT DOWN!', '#ff8c00', 20);
   }
 
   // =====================================================
@@ -483,6 +523,10 @@ export function updateBossAI(
         // Final phase: the complete attack vocabulary, nothing held back.
         moves.push('teleport', 'fireball', 'spin', 'megasmash');
       }
+      if (boss.finalStand) {
+        // Final hearts: meteors and the thrown weapon dominate the rotation
+        moves.push('meteor', 'throw', 'meteor', 'throw');
+      }
 
       boss.moveIdx = (boss.moveIdx + 1) % (moves.length + 1);
       if (boss.moveIdx === moves.length) {
@@ -508,9 +552,21 @@ export function updateBossAI(
           addScreenShake(12);
         } else if (m === 'charge') {
           boss.state = 'chargeWindup';
-          boss.stateTimer = boss.enraged ? 550 : 800; // longer now that the red lane gives a real dodge read
+          boss.stateTimer = CHARGE_WINDUP_MS; // red lane: just 0.4s to get out of it
           boss.chargeAng = Math.atan2(player.y - boss.y, player.x - boss.x);
           spawnFloater(boss.x, boss.y - 100, '⚡ BULL CHARGE LOCK', '#ffcf5c', 18);
+        } else if (m === 'meteor') {
+          boss.state = 'meteorWindup';
+          boss.stateTimer = 700;
+          playBossRoarSound();
+          addScreenShake(14);
+          spawnFloater(boss.x, boss.y - 110, '☄️ THE SKY IS FALLING!', '#ff9a3c', 22);
+        } else if (m === 'throw') {
+          boss.state = 'throwWindup';
+          boss.stateTimer = 500;
+          boss.targetAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+          boss.facingAng = boss.targetAng;
+          spawnFloater(boss.x, boss.y - 110, '🪓 WEAPON THROW!', '#ffcf5c', 20);
         } else if (m === 'roar') {
           boss.state = 'roar';
           boss.stateTimer = 750;
@@ -583,7 +639,7 @@ export function updateBossAI(
         // The cancel — this is the "wait, that wasn't the real attack" beat.
         boss.feintInto = undefined;
         boss.state = 'chargeWindup';
-        boss.stateTimer = 260; // short: the slam windup already telegraphed the intent
+        boss.stateTimer = CHARGE_WINDUP_MS;
         boss.chargeAng = Math.atan2(player.y - boss.y, player.x - boss.x);
         addScreenShake(8);
         spawnFloater(boss.x, boss.y - 110, '👹 FEINT — IT WAS A CHARGE!', '#ff4d5e', 20);
@@ -717,52 +773,78 @@ export function updateBossAI(
     boss.squash = 0.8;
     if (boss.stateTimer <= 0) {
       boss.state = 'charging';
-      // Safety cap only — the real end condition is covering the full
-      // telegraphed lane length below, so this never cuts a charge short.
-      boss.stateTimer = 2500;
-      boss.chargeAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+      // Safety cap only; the dash itself lasts CHARGE_DASH_MS. NOTE: no re-aim here —
+      // the red lane the player was shown IS the lane that fires, so the 0.4s
+      // telegraph is a fair, readable dodge window.
+      boss.stateTimer = 600;
       boss.chargeDistTraveled = 0;
       boss.chargeHitPlayer = false;
+      boss.chargeCarry = false;
     }
   } else if (boss.state === 'charging') {
     boss.squash = 1.15;
-    const chargeSpeed = (14 + gateTier * 1.2) * (boss.enraged ? 1.2 : 1);
-    boss.x += Math.cos(boss.chargeAng || 0) * chargeSpeed;
-    boss.y += Math.sin(boss.chargeAng || 0) * chargeSpeed;
-    boss.facingAng = boss.chargeAng || 0;
-    boss.chargeDistTraveled = (boss.chargeDistTraveled || 0) + chargeSpeed;
+    const ang = boss.chargeAng || 0;
+    const cosA = Math.cos(ang);
+    const sinA = Math.sin(ang);
+    // The whole lane is covered in ~CHARGE_DASH_MS: effectively instant.
+    const remaining = CHARGE_LANE_LEN - (boss.chargeDistTraveled || 0);
+    const step = Math.max(0, Math.min(remaining, (CHARGE_LANE_LEN / CHARGE_DASH_MS) * dt));
+    const px0 = boss.x;
+    const py0 = boss.y;
+    boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, boss.x + cosA * step));
+    boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, boss.y + sinA * step));
+    const moved = Math.hypot(boss.x - px0, boss.y - py0);
+    boss.facingAng = ang;
+    boss.chargeDistTraveled = (boss.chargeDistTraveled || 0) + step;
 
-    createParticles(boss.x, boss.y, '#ff4d5e', 3, 5, 200);
+    // Red streak along everything covered this tick
+    for (let k = 0; k <= 4; k++) {
+      createParticles(px0 + (boss.x - px0) * (k / 4), py0 + (boss.y - py0) * (k / 4), '#ff4d5e', 2, 5, 220);
+    }
 
-    // Hit-check across the FULL width of the red lane (same geometry it's
-    // drawn with) rather than a tiny circle around the boss, and it lands
-    // once, for real damage — not shredded into near-zero per-frame ticks.
+    // Swept hit across the full width of the lane over the ground covered this tick
+    // (a point check would tunnel straight through the player at this speed).
     if (!boss.chargeHitPlayer && !tank.mounted) {
-      const ang = boss.chargeAng || 0;
-      const dx = player.x - boss.x;
-      const dy = player.y - boss.y;
-      const forward = dx * Math.cos(ang) + dy * Math.sin(ang);
-      const lateral = Math.abs(dx * -Math.sin(ang) + dy * Math.cos(ang));
-      const laneHalfWidth = boss.r + player.r + 15;
-      if (forward > -boss.r && forward < laneHalfWidth * 2 && lateral < laneHalfWidth) {
+      const dx = player.x - px0;
+      const dy = player.y - py0;
+      const forward = dx * cosA + dy * sinA;
+      const lateral = Math.abs(-dx * sinA + dy * cosA);
+      const half = boss.r + player.r + 15;
+      if (forward > -boss.r && forward < moved + half && lateral < half) {
         const chargeDmg = Math.round(70 * (boss.skin.chargeMult || 1) * dmgMul * BOSS_SUPER_DMG_MUL);
+        const hp0 = player.hp;
         applyPlayerDamage(chargeDmg);
-        flashVignette();
-        spawnFloater(player.x, player.y - 40, `-${chargeDmg} RAMMED!`, '#ff4d5e', 22);
-        player.pushVx = Math.cos(ang) * 16;
-        player.pushVy = Math.sin(ang) * 16;
-        boss.chargeHitPlayer = true;
+        if (player.hp < hp0) {
+          flashVignette();
+          spawnFloater(player.x, player.y - 40, `-${chargeDmg} RAMMED!`, '#ff4d5e', 22);
+          boss.chargeHitPlayer = true;
+          boss.chargeCarry = true; // knocked back: rides the dash, dropped just past the boss
+        }
       }
     }
 
-    boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, boss.x));
-    boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, boss.y));
+    // A rammed player is carried at the boss's front for the rest of the dash
+    if (boss.chargeCarry) {
+      player.x = boss.x + cosA * (boss.r + player.r + 4);
+      player.y = boss.y + sinA * (boss.r + player.r + 4);
+      player.pushVx = 0;
+      player.pushVy = 0;
+    }
 
-    // Travel the full telegraphed distance (matches the red lane length the
-    // player was shown) instead of stopping early on an arbitrary timer.
-    if ((boss.chargeDistTraveled || 0) >= CHARGE_LANE_LEN || boss.stateTimer <= 0) {
+    if ((boss.chargeDistTraveled || 0) >= CHARGE_LANE_LEN - 0.001 || boss.stateTimer <= 0) {
+      if (boss.chargeCarry) {
+        // Land just CHARGE_KNOCK_GAP past where the boss stopped
+        const gap = boss.r + player.r + CHARGE_KNOCK_GAP;
+        player.x = Math.max(bounds.minX + player.r, Math.min(bounds.maxX - player.r, boss.x + cosA * gap));
+        player.y = Math.max(bounds.minY + player.r, Math.min(bounds.maxY - player.r, boss.y + sinA * gap));
+        player.pushVx = 0;
+        player.pushVy = 0;
+        boss.chargeCarry = false;
+        addScreenShake(16);
+        createParticles(player.x, player.y, '#ff4d5e', 16, 7, 300);
+      }
       boss.state = 'chargeRecover';
-      boss.stateTimer = 450;
+      boss.stateTimer = CHARGE_RECOVER_MS; // completely still for 1 second, then it moves again
       createParticles(boss.x, boss.y, '#999', 20, 6);
     }
   } else if (boss.state === 'chargeRecover') {
@@ -1077,7 +1159,7 @@ export function updateBossAI(
       // asks for, without making the freeze itself unavoidable.
       if (boss.frostHitPlayer && boss.phase >= 2) {
         boss.state = 'chargeWindup';
-        boss.stateTimer = 420;
+        boss.stateTimer = CHARGE_WINDUP_MS;
         boss.chargeAng = Math.atan2(player.y - boss.y, player.x - boss.x);
         spawnFloater(boss.x, boss.y - 100, '❄️➜⚡ PUNISHING THE SLOW!', '#ff4d5e', 20);
       } else {
@@ -1104,6 +1186,97 @@ export function updateBossAI(
       boss.areaZones = [...(boss.areaZones || []), ...zones];
       addScreenShake(10);
       spawnFloater(boss.x, boss.y - 100, '⚠️ DANGER ZONES ACTIVE!', '#f4a261', 20);
+      boss.state = 'chasing';
+      boss.stateTimer = boss.cycleMs;
+    }
+  } else if (boss.state === 'splitCast') {
+    // Phase 3: the boss splits into 3 bodies (see bossPhase3.ts)
+    boss.squash = 1.2 + Math.sin(now / 50) * 0.18;
+    if (Math.random() < 0.7) createParticles(boss.x, boss.y - boss.height, '#c9c9ff', 4, 8, 400);
+    if (boss.stateTimer <= 0) {
+      startSplit(boss, p3, bounds, { spawnFloater, createParticles, addScreenShake }, (x, y) => cloudBurst(createParticles, x, y, true));
+      boss.state = 'chasing';
+      boss.stateTimer = boss.cycleMs;
+    }
+  } else if (boss.state === 'dizzy') {
+    // This body took its slice of damage and is stunned until the other two are broken too.
+    boss.squash = 1 + Math.sin(now / 130) * 0.08;
+    boss.height = 0;
+    if (Math.random() < 0.35) createParticles(boss.x + (Math.random() - 0.5) * boss.r, boss.y - boss.r * 0.8, '#ffe066', 1, 2, 500);
+    if (!boss.splitActive) {
+      boss.state = 'chasing';
+      boss.stateTimer = boss.cycleMs;
+    } else if (boss.splitDizzy && p3.clones.length === 0) {
+      // Every clone has been dragged in: the real boss wakes holding the remaining "final hearts".
+      boss.splitActive = false;
+      boss.splitDizzy = false;
+      boss.finalStand = true;
+      boss.finalStandAt = now;
+      boss.missilesFired = 0;
+      boss.missileAt = now + MISSILE_FIRST_MS;
+      p3.crackX = boss.x;
+      p3.crackY = boss.y;
+      p3.crackSeed = Math.floor(Math.random() * 1e6) + 1;
+      p3.flash = 1;
+      p3.flashAt = now + 1500;
+      playBossRoarSound();
+      playAlertStinger();
+      addScreenShake(32);
+      createParticles(boss.x, boss.y, '#cfd4ff', 60, 14, 800);
+      spawnFloater(boss.x, boss.y - 140, '💀 FINAL HEARTS — THE DIMENSION IS BREAKING!', '#ffd166', 24);
+      boss.phaseTransitionUntil = now + 500;
+      boss.state = 'chasing';
+      boss.stateTimer = 800;
+    }
+  } else if (boss.state === 'meteorWindup') {
+    boss.squash = 1.25 + Math.sin(now / 55) * 0.15;
+    if (Math.random() < 0.6) createParticles(boss.x, boss.y - boss.height, '#ff9a3c', 3, 7, 300);
+    if (boss.stateTimer <= 0) {
+      boss.state = 'meteorShower';
+      boss.stateTimer = 3200;
+      boss.meteorNextAt = now;
+    }
+  } else if (boss.state === 'meteorShower') {
+    boss.squash = 1.1;
+    if (boss.meteorNextAt !== undefined && now >= boss.meteorNextAt) {
+      boss.meteorNextAt = now + (boss.enraged ? 280 : 330);
+      const mDmg = Math.round(METEOR_DMG * dmgMul);
+      const mDps = CRATER_DPS * dmgMul;
+      const cx = (v: number) => Math.max(bounds.minX + 60, Math.min(bounds.maxX - 60, v));
+      const cy = (v: number) => Math.max(bounds.minY + 60, Math.min(bounds.maxY - 60, v));
+      // One lands close to the player (forces movement), one further out
+      const a1 = Math.random() * Math.PI * 2;
+      const d1 = Math.random() * 120;
+      spawnMeteor(p3, cx(player.x + Math.cos(a1) * d1), cy(player.y + Math.sin(a1) * d1), mDmg, mDps);
+      const a2 = Math.random() * Math.PI * 2;
+      const d2 = 150 + Math.random() * 370;
+      spawnMeteor(p3, cx(player.x + Math.cos(a2) * d2), cy(player.y + Math.sin(a2) * d2), mDmg, mDps);
+    }
+    if (boss.stateTimer <= 0) {
+      boss.state = 'chasing';
+      boss.stateTimer = boss.cycleMs;
+    }
+  } else if (boss.state === 'throwWindup') {
+    boss.squash = 0.85;
+    boss.facingAng = boss.targetAng;
+    if (boss.stateTimer <= 0) {
+      const tAng = boss.targetAng;
+      bossOrbs.push({
+        id: Math.random().toString(),
+        x: boss.x,
+        y: boss.y - boss.height,
+        vx: Math.cos(tAng) * THROW_SPEED,
+        vy: Math.sin(tAng) * THROW_SPEED,
+        r: 30,
+        hp: 99999,
+        hpMax: 99999,
+        dmg: Math.round(THROW_DMG * dmgMul),
+        life: 2200,
+        kind: 'throw',
+        spin: 0,
+      });
+      addScreenShake(8);
+      playExplosionSound();
       boss.state = 'chasing';
       boss.stateTimer = boss.cycleMs;
     }
@@ -1158,8 +1331,17 @@ export function updateBossAI(
   } else if (boss.state === 'despRecover') {
     boss.squash = 0.85;
     if (boss.stateTimer <= 0) {
-      boss.state = 'chasing';
-      boss.stateTimer = boss.cycleMs;
+      if (!boss.splitDone) {
+        // The finisher is over — now the real boss splits into 3
+        boss.splitDone = true;
+        boss.state = 'splitCast';
+        boss.stateTimer = 900;
+        playBossRoarSound();
+        spawnFloater(boss.x, boss.y - 120, '🌀 IT IS SPLITTING...', '#c9c9ff', 20);
+      } else {
+        boss.state = 'chasing';
+        boss.stateTimer = boss.cycleMs;
+      }
     }
   }
 }

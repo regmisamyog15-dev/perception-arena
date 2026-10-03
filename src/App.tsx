@@ -23,6 +23,8 @@ import {
   SoldierType,
   EliteGuard,
   BossOrb,
+  BossClone,
+  Phase3State,
 } from './types/game';
 import {
   WORLD_W,
@@ -55,6 +57,7 @@ import {
 import { generateWorldStructures } from './game/structures';
 import { updateTowersAndClimbing } from './game/towerLogic';
 import { updateBossAI, shatterPhantomDecoy } from './game/bossLogic';
+import { createPhase3State, resetPhase3, updatePhase3, damageSplitBody, steerMissile } from './game/bossPhase3';
 import { renderGameScene } from './game/renderWorld';
 import { preloadAllSprites } from './game/sprites';
 import {
@@ -331,6 +334,7 @@ export default function App() {
     airdrops: [] as Airdrop[],
     cracks: [] as Crack[],
     bossOrbs: [] as BossOrb[],
+    phase3: createPhase3State() as Phase3State,
     decals: [] as Decal[],
     boxes: [] as Box[],
     turrets: [] as Turret[],
@@ -499,13 +503,22 @@ export default function App() {
     spawnFloatingText(player.x, player.y - 40, `Equipped ${wpnDef.name}!`, '#83d3e1');
   }, [spawnFloatingText]);
 
-  const damageEntity = useCallback((ent: Zombie | Boss, rawDmg: number, isRanged?: boolean) => {
+  const damageEntity = useCallback((ent: Zombie | Boss | BossClone, rawDmg: number, isRanged?: boolean) => {
     const sp = engineRef.current.superpowers;
     let dmgMultiplier = 1 + (engineRef.current.player.upgrades.damageBoost || 0) * 0.2;
     const berserker = sp.berserker_instinct;
     if (berserker && berserker.unlocked && berserker.equipped) {
       const p = engineRef.current.player;
       if (p.hp < p.hpMax * 0.4) dmgMultiplier *= 1.3;
+    }
+
+    // Phase 3 Phantom Split: a clone only fills its own "dizzy" meter
+    if ('isClone' in ent) {
+      const realBoss = engineRef.current.boss;
+      if (realBoss) {
+        damageSplitBody(realBoss, engineRef.current.phase3, ent, rawDmg * dmgMultiplier, { spawnFloater: spawnFloatingText, createParticles, addScreenShake });
+      }
+      return;
     }
 
     // === BOSS GIMMICK DAMAGE MODIFIERS ===
@@ -518,6 +531,12 @@ export default function App() {
       // transitions in the same instant.
       if (boss.phaseTransitionUntil !== undefined && performance.now() < boss.phaseTransitionUntil) {
         spawnFloatingText(boss.x, boss.y - boss.r - 30, 'SURGING...', '#ffd166', 13);
+        return;
+      }
+
+      // While split, the real body is just one of three: hits fill its dizzy meter.
+      if (boss.splitActive) {
+        damageSplitBody(boss, engineRef.current.phase3, boss, rawDmg * dmgMultiplier, { spawnFloater: spawnFloatingText, createParticles, addScreenShake });
         return;
       }
 
@@ -660,15 +679,31 @@ export default function App() {
       color: 'rgba(255, 100, 0, 0.5)',
     });
 
-    const targets: (Zombie | Boss)[] = [...engineRef.current.zombies];
+    const targets: (Zombie | Boss | BossClone)[] = [...engineRef.current.zombies];
     if (hitsBoss && engineRef.current.boss && engineRef.current.boss.state !== 'entering') {
       targets.push(engineRef.current.boss);
+      for (const c of engineRef.current.phase3.clones) if (c.state !== 'absorbing') targets.push(c);
     }
 
     for (const t of targets) {
       const dist = Math.hypot(t.x - x, t.y - y);
       if (dist < radius + t.r) {
         damageEntity(t, dmg * (1 - dist / (radius * 1.5)));
+      }
+    }
+
+    // A grenade/rocket blast destroys the boss's orb or homing missile outright
+    // (the thrown melee weapon is solid steel and ignores it).
+    if (hitsBoss) {
+      const orbs = engineRef.current.bossOrbs;
+      for (let oi = orbs.length - 1; oi >= 0; oi--) {
+        const o = orbs[oi];
+        if (o.kind === 'throw') continue;
+        if (Math.hypot(o.x - x, o.y - y) < radius + o.r) {
+          createParticles(o.x, o.y, '#ffd166', 30, 10, 450);
+          spawnFloatingText(o.x, o.y - 30, o.kind === 'missile' ? 'MISSILE INTERCEPTED!' : 'ORB DESTROYED!', '#ffd166', 18);
+          orbs.splice(oi, 1);
+        }
       }
     }
 
@@ -687,6 +722,7 @@ export default function App() {
   }, [createParticles, damageEntity, spawnFloatingText, addScreenShake]);
 
   const handleBossDeath = useCallback((b: Boss) => {
+    resetPhase3(engineRef.current.phase3);
     spawnFloatingText(b.x, b.y, `${b.skin.name} DEFEATED!`, '#ffd166', 30);
     engineRef.current.screenShake = 46;
     playExplosionSound();
@@ -936,9 +972,10 @@ export default function App() {
       color: isLegend ? '#ffd166' : '#83d3e1',
     });
 
-    const targets: (Zombie | Boss)[] = [...engineRef.current.zombies];
+    const targets: (Zombie | Boss | BossClone)[] = [...engineRef.current.zombies];
     if (engineRef.current.boss && engineRef.current.boss.state !== 'entering') {
       targets.push(engineRef.current.boss);
+      for (const c of engineRef.current.phase3.clones) if (c.state !== 'absorbing') targets.push(c);
     }
 
     for (const ent of targets) {
@@ -1014,8 +1051,11 @@ export default function App() {
       });
     }
 
-    const targets: (Zombie | Boss)[] = [...eng.zombies];
-    if (eng.boss && eng.boss.state !== 'entering') targets.push(eng.boss);
+    const targets: (Zombie | Boss | BossClone)[] = [...eng.zombies];
+    if (eng.boss && eng.boss.state !== 'entering') {
+      targets.push(eng.boss);
+      for (const c of eng.phase3.clones) if (c.state !== 'absorbing') targets.push(c);
+    }
     for (const ent of targets) {
       const d = Math.hypot(ent.x - player.x, ent.y - player.y);
       if (d < RADIUS + ent.r) {
@@ -2176,6 +2216,7 @@ export default function App() {
             eng.cracks,
             eng.bullets,
             eng.bossOrbs,
+            eng.phase3,
             dt,
             time,
             eng.wave,
@@ -2187,6 +2228,15 @@ export default function App() {
             addDecal,
             addScreenShake
           );
+          updatePhase3(eng.phase3, eng.boss, player, tank, dt, time, bounds, {
+            applyPlayerDamage,
+            flashVignette,
+            spawnFloater: spawnFloatingText,
+            createParticles,
+            addScreenShake,
+          });
+        } else if (eng.phase3.clones.length || eng.phase3.meteors.length || eng.phase3.craters.length) {
+          resetPhase3(eng.phase3);
         }
 
         // Portal Cracks — boss summon countdown. Previously these just sat on
@@ -2315,10 +2365,25 @@ export default function App() {
               }
             }
 
+            // Bullet hitting a phantom clone (phase 3)
+            if (!hit && !b.noBossDamage) {
+              for (const clone of eng.phase3.clones) {
+                if (clone.state === 'absorbing') continue;
+                const dClone = distToSegment(clone.x, clone.y, prevX, prevY, b.x, b.y);
+                if (dClone < clone.r + 8) {
+                  if (b.splash) explode(b.x, b.y, b.splash, b.dmg);
+                  else damageEntity(clone, b.dmg, true);
+                  hit = true;
+                  break;
+                }
+              }
+            }
+
             // Bullet hitting a Boss Orb — shoot it down before it connects
             if (!hit) {
               for (let oi = eng.bossOrbs.length - 1; oi >= 0; oi--) {
                 const orb = eng.bossOrbs[oi];
+                if (orb.kind === 'throw') continue; // thrown weapon is solid steel
                 const dOrb = distToSegment(orb.x, orb.y, prevX, prevY, b.x, b.y);
                 if (dOrb < orb.r + 8) {
                   orb.hp -= b.dmg;
@@ -2326,7 +2391,7 @@ export default function App() {
                   if (orb.hp <= 0) {
                     createParticles(orb.x, orb.y, '#ffd166', 30, 10, 450);
                     addScreenShake(10);
-                    spawnFloatingText(orb.x, orb.y - 30, 'ORB DESTROYED!', '#ffd166', 16);
+                    spawnFloatingText(orb.x, orb.y - 30, orb.kind === 'missile' ? 'MISSILE DOWN!' : 'ORB DESTROYED!', '#ffd166', 16);
                     eng.bossOrbs.splice(oi, 1);
                   }
                   hit = true;
@@ -2403,6 +2468,8 @@ export default function App() {
         // Update Boss Orbs — big slow dodgeable projectiles
         for (let i = eng.bossOrbs.length - 1; i >= 0; i--) {
           const orb = eng.bossOrbs[i];
+          if (orb.kind === 'missile') steerMissile(orb, player.x, player.y);
+          else if (orb.kind === 'throw') orb.spin = (orb.spin || 0) + dt * 0.022;
           orb.x += orb.vx;
           orb.y += orb.vy;
           orb.life -= dt;
@@ -2413,7 +2480,7 @@ export default function App() {
           if (Math.hypot(player.x - orb.x, player.y - orb.y) < player.r + orb.r && !tank.mounted) {
             applyPlayerDamage(orb.dmg);
             flashVignette();
-            spawnFloatingText(player.x, player.y - 40, `-${orb.dmg} ORB HIT!`, '#ffd166', 22);
+            spawnFloatingText(player.x, player.y - 40, `-${orb.dmg} ${orb.kind === 'throw' ? 'WEAPON HIT!' : orb.kind === 'missile' ? 'MISSILE HIT!' : 'ORB HIT!'}`, '#ffd166', 22);
             createParticles(orb.x, orb.y, '#ffd166', 26, 9, 400);
             addScreenShake(14);
             eng.bossOrbs.splice(i, 1);
@@ -2585,7 +2652,8 @@ export default function App() {
             eng.eliteGuards,
             eng.currentArenaId,
             eng.beaconEjectTimer,
-            eng.bossOrbs
+            eng.bossOrbs,
+            eng.phase3
           );
         }
       }
@@ -2816,6 +2884,7 @@ export default function App() {
     engineRef.current.airdrops = [];
     engineRef.current.cracks = [];
     engineRef.current.bossOrbs = [];
+    resetPhase3(engineRef.current.phase3);
     engineRef.current.decals = [];
     engineRef.current.boxes = [];
     engineRef.current.turrets = [];

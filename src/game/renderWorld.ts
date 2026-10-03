@@ -20,7 +20,9 @@ import {
   Superpower,
   EliteGuard,
   BossOrb,
+  Phase3State,
 } from '../types/game';
+import { drawPhase3Ground, drawClones, drawPhase3Top, drawThrowAim, drawSpecialOrb } from './renderPhase3';
 import { WORLD_W, WORLD_H, CHARGE_LANE_LEN } from './constants';
 import { drawBossSprite, drawZombieSprite, drawSoldierSprite } from './sprites';
 
@@ -96,7 +98,8 @@ export function renderGameScene(
   eliteGuards?: EliteGuard[],
   currentArenaId?: number | null,
   beaconEjectTimer?: number,
-  bossOrbs?: BossOrb[]
+  bossOrbs?: BossOrb[],
+  phase3?: Phase3State
 ) {
   ctx.clearRect(0, 0, cw, ch);
 
@@ -739,8 +742,12 @@ export function renderGameScene(
     }
   }
 
+  // Phase 3 ground layer: cracks in the dimension + meteor craters (under everything)
+  if (phase3) drawPhase3Ground(ctx, phase3, boss ?? null, performance.now());
+
   // Boss Orbs — big, slow, dodgeable projectiles that can also be shot down
   for (const orb of (bossOrbs || [])) {
+    if (orb.kind && orb.kind !== 'orb' && drawSpecialOrb(ctx, orb, performance.now())) continue;
     const pulse = 1 + Math.sin(performance.now() / 120) * 0.08;
     const r = orb.r * pulse;
     ctx.save();
@@ -1221,6 +1228,7 @@ export function renderGameScene(
       'solarWindup', 'solarBeam', 'laserWindup', 'laserSweep', 'fireballWindup',
       'spinWindup', 'spinning', 'teleportOut', 'teleportStrike', 'summonWindup', 'roar', 'spikeField',
       'frostWindup', 'frostBeam', 'denialWindup', 'despWindup', 'despStrike',
+      'meteorWindup', 'meteorShower', 'throwWindup', 'splitCast',
     ]);
     const bossAnim: 'idle' | 'walk' | 'attack' = attackStates.has(boss.state)
       ? 'attack'
@@ -1300,6 +1308,9 @@ export function renderGameScene(
     }
     ctx.restore();
   }
+
+  // Phase 3 phantom clones
+  if (phase3) drawClones(ctx, phase3, performance.now());
 
   // Player OR Tank
   if (tank.mounted) {
@@ -1576,6 +1587,12 @@ export function renderGameScene(
       ctx.fill();
       ctx.shadowBlur = 0;
     }
+  }
+
+  // Phase 3 top layer: meteors, break meters, dizzy stars, light flash, throw aim line
+  if (phase3) {
+    drawPhase3Top(ctx, phase3, boss ?? null, performance.now(), camX, camY, cw, ch);
+    if (boss) drawThrowAim(ctx, boss, performance.now());
   }
 
   // Particles (Muzzle flashes, Casings, Melee Slashes, Sparks)

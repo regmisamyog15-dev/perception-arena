@@ -141,7 +141,7 @@ export interface Boss {
   baseSpeed: number;
   color: string;
   dead: boolean;
-  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField' | 'frostWindup' | 'frostBeam' | 'denialWindup' | 'despWindup' | 'despStrike' | 'despRecover';
+  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField' | 'frostWindup' | 'frostBeam' | 'denialWindup' | 'despWindup' | 'despStrike' | 'despRecover' | 'splitCast' | 'dizzy' | 'meteorWindup' | 'meteorShower' | 'throwWindup';
   stateTimer: number;
   targetAng: number;
   facingAng: number;
@@ -193,6 +193,19 @@ export interface Boss {
   // Universal charge fix — travel the full telegraphed lane, hit once for real damage
   chargeDistTraveled?: number;
   chargeHitPlayer?: boolean;
+  chargeCarry?: boolean; // rammed: the player rides the dash and is dropped just past the boss
+  // Phase 3 "Phantom Split" — 3 bodies, each goes dizzy after taking a slice of the phase-3 pool
+  splitDone?: boolean;
+  splitActive?: boolean;
+  splitMeter?: number;
+  splitMeterMax?: number;
+  splitDizzy?: boolean;
+  // Final stand ("final hearts"): meteors, thrown weapon, homing missile orb
+  finalStand?: boolean;
+  finalStandAt?: number;
+  missilesFired?: number;
+  missileAt?: number;
+  meteorNextAt?: number;
   // Universal portal summon system — every boss, independent of gimmick/moveset
   portalCheckAt?: number;
   // Runner pack: 5 fast, extra-health runners every minute
@@ -225,6 +238,60 @@ export interface BossOrb {
   hpMax: number;
   dmg: number;
   life: number;
+  /** 'orb' (default slow straight orb), 'missile' (phase 3 homing), 'throw' (thrown melee weapon). */
+  kind?: 'orb' | 'missile' | 'throw';
+  speed?: number; // missile cruise speed (px/frame)
+  spin?: number;  // thrown weapon rotation
+}
+
+/** A phantom copy of the boss during phase 3. Shares the boss's sprite. */
+export interface BossClone {
+  id: string;
+  isClone: true;
+  skinKey: string;
+  x: number;
+  y: number;
+  r: number;
+  color: string;
+  facingAng: number;
+  squash: number;
+  alpha: number;
+  state: 'chasing' | 'dizzy' | 'absorbing';
+  stateTimer: number;
+  atkCd: number;
+  meter: number;
+  meterMax: number;
+}
+
+export interface Meteor {
+  id: string;
+  x: number; // impact point
+  y: number;
+  t: number; // ms elapsed
+  fallMs: number;
+  dmg: number;
+  dps: number; // crater damage per second it will leave behind
+}
+
+export interface Crater {
+  id: string;
+  x: number;
+  y: number;
+  r: number;
+  life: number;
+  maxLife: number;
+  dps: number;
+}
+
+export interface Phase3State {
+  clones: BossClone[];
+  meteors: Meteor[];
+  craters: Crater[];
+  flash: number; // 0..1 light flash from the breaking dimension
+  flashAt: number;
+  crackX: number;
+  crackY: number;
+  crackSeed: number;
 }
 
 export interface EliteGuard {

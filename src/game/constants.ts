@@ -29,6 +29,33 @@ export const JUMPSCARE_INTERVAL_ENRAGED_MS = 14000;
 // Super attacks (leap/megasmash, beams, charge, blink strike, spikes, finisher) hit a bit harder.
 export const BOSS_SUPER_DMG_MUL = 1.2;
 
+// ---- Bull charge ("ramp") ----
+export const CHARGE_WINDUP_MS = 400;   // red lane is visible for just 0.4s before it fires
+export const CHARGE_DASH_MS = 130;     // ...then the dash covers the whole lane almost instantly
+export const CHARGE_RECOVER_MS = 1000; // boss stands completely still for 1s afterwards
+export const CHARGE_KNOCK_GAP = 10;    // a rammed player is dropped this far past the boss's body
+
+// ---- Phase 3: Phantom Split, final stand ----
+export const SPLIT_STAT_MUL = 0.5;        // every body deals half damage while split
+export const SPLIT_CLONE_COUNT = 2;       // + the real boss = 3 bodies
+export const SPLIT_BREAK_FRACTION = 1 / 6; // each body goes dizzy after 1/6 of the phase-3 pool (150 of 900)
+export const CLONE_STRIKE_DMG = 40;
+export const MISSILE_SPEED_MUL = 2.5;     // yellow orb becomes a homing missile at 2.5x orb speed
+export const MISSILE_MAX_FIRED = 2;       // only fired twice in the final stand
+export const MISSILE_HP = 90;
+export const MISSILE_TURN = 0.045;        // rad/frame — fast but jukeable
+export const MISSILE_FIRST_MS = 4000;
+export const MISSILE_GAP_MS = 14000;
+export const METEOR_FALL_MS = 350;        // very quick fall
+export const METEOR_BLAST_R = 75;
+export const METEOR_DMG = 60;
+export const CRATER_R = 62;
+export const CRATER_LIFE_MS = 9000;
+export const CRATER_DPS = 30;
+export const CRATER_MAX = 16;
+export const THROW_SPEED = 11;
+export const THROW_DMG = 55;
+
 // Resurrection Pod — floating sci-fi/arcane healing chamber for downed soldiers
 export const REVIVE_POD_COST = 1500;
 export const REVIVE_POD_HEAL_MS = 14000; // time to fully heal once placed in the pod
