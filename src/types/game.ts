@@ -102,6 +102,8 @@ export interface Zombie {
   dead?: boolean;
   /** Born from a boss portal; counts toward the 4-at-once summon cap. */
   summoned?: boolean;
+  /** Id of the boss summon wave that produced this zombie. */
+  summonWave?: number;
   push?: boolean;
   isAggro?: boolean;
   wanderAngle?: number;
@@ -141,7 +143,7 @@ export interface Boss {
   baseSpeed: number;
   color: string;
   dead: boolean;
-  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField' | 'frostWindup' | 'frostBeam' | 'denialWindup' | 'despWindup' | 'despStrike' | 'despRecover' | 'splitCast' | 'dizzy' | 'meteorWindup' | 'meteorShower' | 'throwWindup';
+  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField' | 'frostWindup' | 'frostBeam' | 'denialWindup' | 'despWindup' | 'despStrike' | 'despRecover' | 'splitCast' | 'dizzy' | 'meteorWindup' | 'meteorShower' | 'throwWindup' | 'pullWindup' | 'pulling' | 'comboWindup' | 'comboRecover';
   stateTimer: number;
   targetAng: number;
   facingAng: number;
@@ -206,6 +208,14 @@ export interface Boss {
   missilesFired?: number;
   missileAt?: number;
   meteorNextAt?: number;
+  // Chain pull + God-of-War style combo
+  pullAt?: number;
+  comboStep?: number;
+  comboAng?: number;
+  comboCdUntil?: number;
+  // Summon wave (once a minute); App wipes the previous batch when this id changes
+  summonWaveAt?: number;
+  summonWaveId?: number;
   // Universal portal summon system — every boss, independent of gimmick/moveset
   portalCheckAt?: number;
   // Runner pack: 5 fast, extra-health runners every minute
@@ -242,6 +252,8 @@ export interface BossOrb {
   kind?: 'orb' | 'missile' | 'throw';
   speed?: number; // missile cruise speed (px/frame)
   spin?: number;  // thrown weapon rotation
+  travelled?: number; // thrown weapon: distance flown outbound
+  returning?: boolean; // thrown weapon: being recalled to the boss
 }
 
 /** A phantom copy of the boss during phase 3. Shares the boss's sprite. */
@@ -398,6 +410,8 @@ export interface Crack {
   hpMul?: number;
   /** Skips the boss-summon cap (runner pack is its own timed event). */
   bypassCap?: boolean;
+  /** Which summon wave opened this portal. */
+  waveId?: number;
 }
 
 export interface Decal {

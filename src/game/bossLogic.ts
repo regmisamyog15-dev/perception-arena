@@ -5,6 +5,9 @@ import {
   CHARGE_WINDUP_MS, CHARGE_DASH_MS, CHARGE_RECOVER_MS, CHARGE_KNOCK_GAP, SPLIT_STAT_MUL,
   MISSILE_SPEED_MUL, MISSILE_MAX_FIRED, MISSILE_HP, MISSILE_FIRST_MS, MISSILE_GAP_MS,
   METEOR_DMG, CRATER_DPS, THROW_SPEED, THROW_DMG,
+  SUMMON_WAVE_INTERVAL_MS, SUMMON_WAVE_GIANTS, SUMMON_WAVE_RUNNERS, SUMMON_WAVE_RUNNER_HP_MUL,
+  PULL_INTERVAL_MS, PULL_MIN_DIST, PULL_WINDUP_MS, PULL_SPEED, PULL_END_GAP, PULL_COMBO_WINDUP,
+  COMBO_TRIGGER_RANGE, COMBO_COOLDOWN_MS, COMBO_RECOVER_MS, COMBO_STEPS,
   PORTAL_INTERVAL_MS, PORTAL_INTERVAL_ENRAGED_MS,
   BOSS_SUMMON_CAP, RUNNER_WAVE_INTERVAL_MS, RUNNER_WAVE_COUNT, RUNNER_WAVE_HP_MUL,
   JUMPSCARE_INTERVAL_MS, JUMPSCARE_INTERVAL_ENRAGED_MS, BOSS_SUPER_DMG_MUL,
@@ -18,6 +21,17 @@ import { playExplosionSound, playBossRoarSound, playAlertStinger } from '../audi
 // everything. Phase-gated and rolled once per opportunity so it reads as an
 // occasional "oh, it's not done" rather than a permanent combo lock.
 const COMBO_CHANCE = 0.32;
+
+// God-of-War style melee chain: slash -> backhand -> heavy smash. Each hit re-aims and
+// lunges toward the player, so the boss keeps coming at you instead of waiting.
+function startCombo(boss: Boss, player: PlayerState, now: number, firstWindup?: number) {
+  boss.state = 'comboWindup';
+  boss.comboStep = 0;
+  boss.comboAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+  boss.facingAng = boss.comboAng;
+  boss.stateTimer = firstWindup ?? COMBO_STEPS[0].windup;
+  boss.comboCdUntil = now + COMBO_COOLDOWN_MS;
+}
 
 // Smoke-cloud burst used when the boss vanishes / reappears (slow, long-lived puffs).
 function cloudBurst(
@@ -162,26 +176,31 @@ export function updateBossAI(
   }
 
   // =====================================================
-  // RUNNER PACK — every boss: 5 speed-running zombies with extra health
-  // once a minute. Own clock; not limited by the portal-giant cap.
+  // SUMMON WAVE — once a minute, and deliberately small: a couple of giants and a
+  // few fast, extra-health runners. When the next wave arrives, the App instantly
+  // kills whatever is left of the previous one (it watches summonWaveId), so there
+  // is never more than one batch alive. No other timer or move spawns zombies.
   // =====================================================
-  if (boss.runnerWaveAt === undefined) {
-    boss.runnerWaveAt = now + RUNNER_WAVE_INTERVAL_MS;
-  } else if (now >= boss.runnerWaveAt) {
-    boss.runnerWaveAt = now + RUNNER_WAVE_INTERVAL_MS;
-    addScreenShake(10);
-    spawnFloater(boss.x, boss.y - 120, `🏃 ${RUNNER_WAVE_COUNT} SPEED RUNNERS INCOMING!`, '#ff8a4d', 20);
-    for (let i = 0; i < RUNNER_WAVE_COUNT; i++) {
-      const ang = (i / RUNNER_WAVE_COUNT) * Math.PI * 2 + Math.random() * 0.5;
-      const dist = 260 + Math.random() * 160;
+  if (boss.summonWaveAt === undefined) {
+    boss.summonWaveAt = now + SUMMON_WAVE_INTERVAL_MS;
+  } else if (now >= boss.summonWaveAt) {
+    boss.summonWaveAt = now + SUMMON_WAVE_INTERVAL_MS;
+    boss.summonWaveId = (boss.summonWaveId || 0) + 1;
+    addScreenShake(14);
+    spawnFloater(boss.x, boss.y - 120, '🌀 THE OLD BATCH DIES — A NEW WAVE ARRIVES!', '#b98bff', 20);
+    const total = SUMMON_WAVE_GIANTS + SUMMON_WAVE_RUNNERS;
+    for (let i = 0; i < total; i++) {
+      const giant = i < SUMMON_WAVE_GIANTS;
+      const ang = (i / total) * Math.PI * 2 + Math.random() * 0.4;
+      const dist = (giant ? 300 : 260) + Math.random() * 150;
       cracks.push({
         id: Math.random().toString(),
         x: Math.max(bounds.minX + 60, Math.min(bounds.maxX - 60, player.x + Math.cos(ang) * dist)),
         y: Math.max(bounds.minY + 60, Math.min(bounds.maxY - 60, player.y + Math.sin(ang) * dist)),
-        time: 800,
-        type: 'runner',
-        hpMul: RUNNER_WAVE_HP_MUL,
-        bypassCap: true,
+        time: giant ? (boss.enraged ? 950 : 1200) : 800,
+        type: giant ? 'ztank' : 'runner',
+        hpMul: giant ? undefined : SUMMON_WAVE_RUNNER_HP_MUL,
+        waveId: boss.summonWaveId,
       });
     }
   }
@@ -209,32 +228,22 @@ export function updateBossAI(
   }
 
   // =====================================================
-  // UNIVERSAL PORTAL SUMMONS — every boss, on a clock, independent of
-  // its gimmick or move rotation. Portals open in a ring around (but never
-  // on top of) the player, count down while pulsing (the existing Crack
-  // visuals), then each births a giant ztank — the same heavy unit used
-  // in the final phases — so a portal wave reads as a real escalation.
+  // CHAIN PULL — every 20s, from the neutral chase, the boss yanks the player in
+  // and goes straight into a combo, so kiting it forever isn't an option.
   // =====================================================
-  const portalInterval = boss.enraged ? PORTAL_INTERVAL_ENRAGED_MS : PORTAL_INTERVAL_MS;
-  if (boss.portalCheckAt === undefined) {
-    boss.portalCheckAt = now + portalInterval;
-  } else if (now >= boss.portalCheckAt) {
-    boss.portalCheckAt = now + portalInterval;
-    addScreenShake(14);
-    spawnFloater(boss.x, boss.y - 100, `🌀 ${BOSS_SUMMON_CAP} PORTALS UNLEASH GIANTS!`, '#b98bff', 20);
-    const portalCount = BOSS_SUMMON_CAP;
-    for (let i = 0; i < portalCount; i++) {
-      const ang = (i / portalCount) * Math.PI * 2 + Math.random() * 0.3;
-      const dist = 300 + Math.random() * 140; // wider ring — ztanks hit harder & take up more space
-      const px = Math.max(bounds.minX + 60, Math.min(bounds.maxX - 60, player.x + Math.cos(ang) * dist));
-      const py = Math.max(bounds.minY + 60, Math.min(bounds.maxY - 60, player.y + Math.sin(ang) * dist));
-      cracks.push({
-        id: Math.random().toString(),
-        x: px,
-        y: py,
-        time: boss.enraged ? 950 : 1200,
-        type: 'ztank',
-      });
+  if (boss.pullAt === undefined) {
+    boss.pullAt = now + PULL_INTERVAL_MS;
+  } else if (now >= boss.pullAt && boss.state === 'chasing') {
+    if (Math.hypot(player.x - boss.x, player.y - boss.y) > PULL_MIN_DIST && !tank.mounted) {
+      boss.pullAt = now + PULL_INTERVAL_MS;
+      boss.state = 'pullWindup';
+      boss.stateTimer = PULL_WINDUP_MS;
+      boss.facingAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+      playAlertStinger();
+      addScreenShake(8);
+      spawnFloater(boss.x, boss.y - 110, '⛓ CHAINED! YOU ARE BEING PULLED IN', '#ff4d5e', 22);
+    } else {
+      boss.pullAt = now + 3000; // already close (or in a tank) — try again shortly
     }
   }
 
@@ -514,8 +523,19 @@ export function updateBossAI(
     boss.squash = 1 + Math.sin(now / 90) * 0.06;
     if (boss.skin.flies) boss.height = 60 + Math.sin(now / 260) * 12;
 
+    // Once the boss has closed the gap it commits to a melee combo instead of just
+    // walking into you (cooldown-gated so it can't chain combos back to back).
+    if (dToPlayer < boss.r + player.r + COMBO_TRIGGER_RANGE && now >= (boss.comboCdUntil || 0)) {
+      startCombo(boss, player, now);
+      spawnFloater(boss.x, boss.y - 100, '⚔️ COMBO!', '#ff9a3c', 20);
+      return;
+    }
+
     if (boss.stateTimer <= 0) {
-      const moves = [...boss.skin.moves];
+      // Summons are strictly the once-a-minute wave, so the old summon move is dropped.
+      // The melee combo joins every boss's rotation.
+      const moves = boss.skin.moves.filter((mv: string) => mv !== 'summon');
+      moves.push('combo', 'combo');
       if (boss.phase >= 2) {
         moves.push('solarBeam', 'pushSlam', 'laser', 'charge', 'spikeField', 'frost', 'areaDenial', 'feint');
       }
@@ -555,6 +575,9 @@ export function updateBossAI(
           boss.stateTimer = CHARGE_WINDUP_MS; // red lane: just 0.4s to get out of it
           boss.chargeAng = Math.atan2(player.y - boss.y, player.x - boss.x);
           spawnFloater(boss.x, boss.y - 100, '⚡ BULL CHARGE LOCK', '#ffcf5c', 18);
+        } else if (m === 'combo') {
+          startCombo(boss, player, now);
+          spawnFloater(boss.x, boss.y - 100, '⚔️ COMBO!', '#ff9a3c', 20);
         } else if (m === 'meteor') {
           boss.state = 'meteorWindup';
           boss.stateTimer = 700;
@@ -1189,6 +1212,86 @@ export function updateBossAI(
       boss.state = 'chasing';
       boss.stateTimer = boss.cycleMs;
     }
+  } else if (boss.state === 'pullWindup') {
+    // Chain telegraph: the boss locks on and the chain is drawn to the player
+    boss.squash = 0.9;
+    boss.facingAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+    if (boss.stateTimer <= 0) {
+      boss.state = 'pulling';
+      boss.stateTimer = 900; // safety cap
+    }
+  } else if (boss.state === 'pulling') {
+    boss.squash = 1.05;
+    const pdx = boss.x - player.x;
+    const pdy = boss.y - player.y;
+    const pd = Math.hypot(pdx, pdy);
+    boss.facingAng = Math.atan2(-pdy, -pdx);
+    const stopGap = boss.r + player.r + PULL_END_GAP;
+    const pullStep = Math.min(Math.max(0, pd - stopGap), PULL_SPEED * dt);
+    if (pd > 0.001 && pullStep > 0) {
+      player.x += (pdx / pd) * pullStep;
+      player.y += (pdy / pd) * pullStep;
+    }
+    player.pushVx = 0;
+    player.pushVy = 0;
+    createParticles(player.x, player.y, '#c9c9d6', 2, 4, 220);
+    if (pd - pullStep <= stopGap + 1 || boss.stateTimer <= 0) {
+      // Arrived: straight into the combo
+      addScreenShake(14);
+      createParticles(player.x, player.y, '#ff4d5e', 14, 7, 300);
+      startCombo(boss, player, now, PULL_COMBO_WINDUP);
+    }
+  } else if (boss.state === 'comboWindup') {
+    const step = COMBO_STEPS[boss.comboStep || 0];
+    boss.squash = 0.85;
+    boss.facingAng = boss.comboAng || 0;
+    if (boss.stateTimer <= 0) {
+      const a = boss.comboAng || 0;
+      // Lunge toward the locked direction, but never through the player
+      const dist = Math.hypot(player.x - boss.x, player.y - boss.y);
+      const lunge = Math.max(0, Math.min(step.lunge, dist - (boss.r + player.r + 6)));
+      const sx = boss.x;
+      const sy = boss.y;
+      boss.x = Math.max(bounds.minX + boss.r, Math.min(bounds.maxX - boss.r, boss.x + Math.cos(a) * lunge));
+      boss.y = Math.max(bounds.minY + boss.r, Math.min(bounds.maxY - boss.r, boss.y + Math.sin(a) * lunge));
+      for (let k = 0; k <= 3; k++) {
+        createParticles(sx + (boss.x - sx) * (k / 3), sy + (boss.y - sy) * (k / 3), '#ff9a3c', 2, 5, 200);
+      }
+      // Hit check: inside the cone (or the whole ring for the smash) and within reach
+      const hdx = player.x - boss.x;
+      const hdy = player.y - boss.y;
+      const hd = Math.hypot(hdx, hdy);
+      const da = Math.abs(Math.atan2(Math.sin(Math.atan2(hdy, hdx) - a), Math.cos(Math.atan2(hdy, hdx) - a)));
+      const inCone = step.arc >= Math.PI * 2 || da <= step.arc / 2;
+      if (!tank.mounted && hd <= boss.r + player.r + step.reach && inCone) {
+        const cDmg = Math.round(step.dmg * dmgMul);
+        const hp0 = player.hp;
+        applyPlayerDamage(cDmg);
+        if (player.hp < hp0) {
+          flashVignette();
+          player.pushVx = Math.cos(a) * step.knock;
+          player.pushVy = Math.sin(a) * step.knock;
+          spawnFloater(player.x, player.y - 40, `-${cDmg} ${step.name}`, '#ff9a3c', 20);
+        }
+      }
+      addScreenShake(step.shake);
+      createParticles(boss.x + Math.cos(a) * boss.r, boss.y + Math.sin(a) * boss.r, '#ffd9a0', 10, 7, 260);
+      // Next hit in the chain, or the finisher's recovery (a wide-open punish window)
+      boss.comboStep = (boss.comboStep || 0) + 1;
+      if (boss.comboStep < COMBO_STEPS.length) {
+        boss.comboAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+        boss.stateTimer = COMBO_STEPS[boss.comboStep].windup;
+      } else {
+        boss.state = 'comboRecover';
+        boss.stateTimer = COMBO_RECOVER_MS;
+      }
+    }
+  } else if (boss.state === 'comboRecover') {
+    boss.squash = 0.9;
+    if (boss.stateTimer <= 0) {
+      boss.state = 'chasing';
+      boss.stateTimer = boss.cycleMs;
+    }
   } else if (boss.state === 'splitCast') {
     // Phase 3: the boss splits into 3 bodies (see bossPhase3.ts)
     boss.squash = 1.2 + Math.sin(now / 50) * 0.18;
@@ -1271,7 +1374,7 @@ export function updateBossAI(
         hp: 99999,
         hpMax: 99999,
         dmg: Math.round(THROW_DMG * dmgMul),
-        life: 2200,
+        life: 4500,
         kind: 'throw',
         spin: 0,
       });

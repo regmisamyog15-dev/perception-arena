@@ -55,6 +55,31 @@ export const CRATER_DPS = 30;
 export const CRATER_MAX = 16;
 export const THROW_SPEED = 11;
 export const THROW_DMG = 55;
+export const THROW_RANGE = 700; // thrown weapon flies this far, then is recalled to the boss
+
+// ---- Summon wave: far fewer zombies, once a minute, previous batch wiped on arrival ----
+export const SUMMON_WAVE_INTERVAL_MS = 60000;
+export const SUMMON_WAVE_GIANTS = 2;
+export const SUMMON_WAVE_RUNNERS = 3;
+export const SUMMON_WAVE_RUNNER_HP_MUL = 3;
+
+// ---- Chain pull: every 20s the boss yanks the player in, then goes straight into a combo ----
+export const PULL_INTERVAL_MS = 20000;
+export const PULL_MIN_DIST = 260;   // only worth pulling if the player is actually away from the boss
+export const PULL_WINDUP_MS = 500;  // chain telegraph
+export const PULL_SPEED = 2.6;      // px per ms (~43px/frame)
+export const PULL_END_GAP = 36;     // player is dropped this far from the boss's body
+export const PULL_COMBO_WINDUP = 260;
+
+// ---- God-of-War style melee combo (lunging chain: slash, backhand, heavy smash) ----
+export const COMBO_TRIGGER_RANGE = 120; // edge-to-edge distance at which the boss starts swinging
+export const COMBO_COOLDOWN_MS = 3500;
+export const COMBO_RECOVER_MS = 900;    // punish window after the finisher
+export const COMBO_STEPS = [
+  { name: 'SLASH', windup: 380, reach: 105, arc: 1.7, dmg: 34, lunge: 90, knock: 8, shake: 8 },
+  { name: 'BACKHAND', windup: 260, reach: 115, arc: 2.0, dmg: 38, lunge: 90, knock: 9, shake: 9 },
+  { name: 'SMASH', windup: 520, reach: 150, arc: Math.PI * 2, dmg: 70, lunge: 130, knock: 20, shake: 20 },
+];
 
 // Resurrection Pod — floating sci-fi/arcane healing chamber for downed soldiers
 export const REVIVE_POD_COST = 1500;

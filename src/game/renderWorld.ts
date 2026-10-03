@@ -22,7 +22,7 @@ import {
   BossOrb,
   Phase3State,
 } from '../types/game';
-import { drawPhase3Ground, drawClones, drawPhase3Top, drawThrowAim, drawSpecialOrb } from './renderPhase3';
+import { drawPhase3Ground, drawClones, drawPhase3Top, drawThrowAim, drawSpecialOrb, drawBossMeleeFx } from './renderPhase3';
 import { WORLD_W, WORLD_H, CHARGE_LANE_LEN } from './constants';
 import { drawBossSprite, drawZombieSprite, drawSoldierSprite } from './sprites';
 
@@ -1229,6 +1229,7 @@ export function renderGameScene(
       'spinWindup', 'spinning', 'teleportOut', 'teleportStrike', 'summonWindup', 'roar', 'spikeField',
       'frostWindup', 'frostBeam', 'denialWindup', 'despWindup', 'despStrike',
       'meteorWindup', 'meteorShower', 'throwWindup', 'splitCast',
+      'pullWindup', 'pulling', 'comboWindup',
     ]);
     const bossAnim: 'idle' | 'walk' | 'attack' = attackStates.has(boss.state)
       ? 'attack'
@@ -1593,6 +1594,7 @@ export function renderGameScene(
   if (phase3) {
     drawPhase3Top(ctx, phase3, boss ?? null, performance.now(), camX, camY, cw, ch);
     if (boss) drawThrowAim(ctx, boss, performance.now());
+    if (boss) drawBossMeleeFx(ctx, boss, player, performance.now());
   }
 
   // Particles (Muzzle flashes, Casings, Melee Slashes, Sparks)

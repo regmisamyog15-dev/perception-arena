@@ -1,4 +1,4 @@
-import { Boss, BossClone, BossOrb, PlayerState, Tank, Phase3State } from '../types/game';
+import { Boss, BossClone, BossOrb, Crack, PlayerState, Tank, Phase3State, Zombie } from '../types/game';
 import {
   SPLIT_STAT_MUL,
   SPLIT_CLONE_COUNT,
@@ -10,6 +10,8 @@ import {
   CRATER_R,
   CRATER_LIFE_MS,
   CRATER_MAX,
+  THROW_RANGE,
+  THROW_SPEED,
 } from './constants';
 
 // ---------------------------------------------------------------------------
@@ -306,4 +308,43 @@ export function steerMissile(orb: BossOrb, px: number, py: number) {
   const na = cur + turn;
   orb.vx = Math.cos(na) * speed;
   orb.vy = Math.sin(na) * speed;
+}
+
+/**
+ * A new summon wave has arrived: instantly kill whatever is left of the previous
+ * batch (zombies AND portals still opening). Zombies are only flagged dead, so they
+ * vanish with no kill credit and no atom drops (no farming). Returns how many died.
+ */
+export function wipeOldSummons(zombies: Zombie[], cracks: Crack[], waveId: number, onKill?: (z: Zombie) => void): number {
+  let wiped = 0;
+  for (const z of zombies) {
+    if (z.summoned && !z.dead && (z.summonWave ?? 0) < waveId) {
+      z.dead = true;
+      onKill?.(z);
+      wiped++;
+    }
+  }
+  for (let i = cracks.length - 1; i >= 0; i--) {
+    const wid = cracks[i].waveId;
+    if (wid !== undefined && wid < waveId) cracks.splice(i, 1);
+  }
+  return wiped;
+}
+
+/** Thrown melee weapon: flies out, then is recalled to the boss like a boomerang. 'caught' = remove it. */
+export function updateThrownWeapon(orb: BossOrb, boss: Boss | null, dt: number): 'caught' | null {
+  orb.spin = (orb.spin || 0) + dt * 0.022;
+  if (!orb.returning) {
+    orb.travelled = (orb.travelled || 0) + Math.hypot(orb.vx, orb.vy);
+    if (orb.travelled >= THROW_RANGE) orb.returning = true;
+  }
+  if (orb.returning && boss) {
+    const dx = boss.x - orb.x;
+    const dy = boss.y - orb.y;
+    const d = Math.hypot(dx, dy);
+    if (d < boss.r + 12) return 'caught';
+    orb.vx = (dx / d) * THROW_SPEED * 1.1;
+    orb.vy = (dy / d) * THROW_SPEED * 1.1;
+  }
+  return null;
 }

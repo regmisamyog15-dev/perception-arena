@@ -1,6 +1,6 @@
 import { Boss, BossClone, BossOrb, Phase3State } from '../types/game';
 import { drawBossSprite } from './sprites';
-import { METEOR_BLAST_R } from './constants';
+import { METEOR_BLAST_R, COMBO_STEPS } from './constants';
 
 const TAU = Math.PI * 2;
 
@@ -334,4 +334,55 @@ export function drawSpecialOrb(ctx: CanvasRenderingContext2D, o: BossOrb, now: n
     return true;
   }
   return false;
+}
+
+/** Chain pull telegraph + the combo's cone/ring warning. */
+export function drawBossMeleeFx(ctx: CanvasRenderingContext2D, boss: Boss, player: { x: number; y: number }, now: number) {
+  if (boss.state === 'pullWindup' || boss.state === 'pulling') {
+    const x1 = boss.x;
+    const y1 = boss.y - boss.height;
+    const taut = boss.state === 'pulling';
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.shadowColor = '#ff4d5e';
+    ctx.shadowBlur = taut ? 16 : 8;
+    ctx.strokeStyle = taut ? '#e5e7eb' : `rgba(229,231,235,${0.45 + 0.35 * Math.sin(now / 55)})`;
+    ctx.lineWidth = taut ? 7 : 5;
+    ctx.setLineDash([14, 7]);
+    ctx.lineDashOffset = -(now / 18);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(player.x, player.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ff4d5e';
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 9 + Math.sin(now / 70) * 2, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (boss.state === 'comboWindup') {
+    const step = COMBO_STEPS[boss.comboStep || 0];
+    const a = boss.comboAng || 0;
+    const prog = 1 - Math.max(0, Math.min(1, boss.stateTimer / step.windup));
+    const rad = boss.r + step.reach;
+    ctx.save();
+    ctx.translate(boss.x, boss.y);
+    const heavy = step.arc >= TAU;
+    ctx.fillStyle = heavy ? `rgba(255, 60, 60, ${0.12 + 0.28 * prog})` : `rgba(255, 140, 40, ${0.12 + 0.3 * prog})`;
+    ctx.strokeStyle = heavy ? 'rgba(255, 90, 90, 0.9)' : 'rgba(255, 170, 70, 0.9)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    if (heavy) {
+      ctx.arc(0, 0, rad, 0, TAU);
+    } else {
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, rad, a - step.arc / 2, a + step.arc / 2);
+      ctx.closePath();
+    }
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
 }

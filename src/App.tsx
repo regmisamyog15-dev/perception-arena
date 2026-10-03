@@ -40,7 +40,6 @@ import {
   UPGRADES,
   GATE_DEFINITIONS,
   MAX_SOLDIER_LEVEL,
-  BOSS_SUMMON_CAP,
 } from './game/constants';
 import {
   playShootSound,
@@ -57,7 +56,7 @@ import {
 import { generateWorldStructures } from './game/structures';
 import { updateTowersAndClimbing } from './game/towerLogic';
 import { updateBossAI, shatterPhantomDecoy } from './game/bossLogic';
-import { createPhase3State, resetPhase3, updatePhase3, damageSplitBody, steerMissile } from './game/bossPhase3';
+import { createPhase3State, resetPhase3, updatePhase3, damageSplitBody, steerMissile, wipeOldSummons, updateThrownWeapon } from './game/bossPhase3';
 import { renderGameScene } from './game/renderWorld';
 import { preloadAllSprites } from './game/sprites';
 import {
@@ -335,6 +334,7 @@ export default function App() {
     cracks: [] as Crack[],
     bossOrbs: [] as BossOrb[],
     phase3: createPhase3State() as Phase3State,
+    lastSummonWaveId: 0,
     decals: [] as Decal[],
     boxes: [] as Box[],
     turrets: [] as Turret[],
@@ -597,7 +597,7 @@ export default function App() {
       // actually matter: tank a committed attack and it barely dents them,
       // dodge it clean and the recovery window afterward is wide open.
       const isRecovering = boss.state === 'chargeRecover' || boss.state === 'tripped' ||
-        boss.state === 'despRecover' ||
+        boss.state === 'despRecover' || boss.state === 'comboRecover' ||
         (boss.state === 'landing' && (boss.height || 0) <= 0);
       const isCommitted = boss.state === 'charging' || boss.state === 'spinning' ||
         boss.state === 'laserSweep' || boss.state === 'solarBeam' || boss.state === 'airborne' ||
@@ -723,6 +723,7 @@ export default function App() {
 
   const handleBossDeath = useCallback((b: Boss) => {
     resetPhase3(engineRef.current.phase3);
+    engineRef.current.lastSummonWaveId = 0;
     spawnFloatingText(b.x, b.y, `${b.skin.name} DEFEATED!`, '#ffd166', 30);
     engineRef.current.screenShake = 46;
     playExplosionSound();
@@ -2235,6 +2236,16 @@ export default function App() {
             createParticles,
             addScreenShake,
           });
+
+          // A new summon wave arrived: instantly kill whatever is left of the previous batch.
+          const waveId = eng.boss.summonWaveId;
+          if (waveId !== undefined && waveId !== eng.lastSummonWaveId) {
+            eng.lastSummonWaveId = waveId;
+            const wiped = wipeOldSummons(eng.zombies, eng.cracks, waveId, (zz) => createParticles(zz.x, zz.y, '#b98bff', 18, 8, 450));
+            if (wiped > 0) {
+              spawnFloatingText(player.x, player.y - 70, `☠ ${wiped} OLD SUMMON${wiped > 1 ? 'S' : ''} DESTROYED`, '#b98bff', 16);
+            }
+          }
         } else if (eng.phase3.clones.length || eng.phase3.meteors.length || eng.phase3.craters.length) {
           resetPhase3(eng.phase3);
         }
@@ -2246,17 +2257,6 @@ export default function App() {
           const c = eng.cracks[i];
           c.time -= dt;
           if (c.time <= 0) {
-            // Boss portal giants are capped (BOSS_SUMMON_CAP alive at once). A portal that
-            // opens while the cap is full just fizzles. The runner pack bypasses the cap.
-            if (!c.bypassCap) {
-              let aliveSummoned = 0;
-              for (const zz of eng.zombies) if (zz.summoned && !zz.dead) aliveSummoned++;
-              if (aliveSummoned >= BOSS_SUMMON_CAP) {
-                createParticles(c.x, c.y, '#6b5b8a', 14, 5, 350);
-                eng.cracks.splice(i, 1);
-                continue;
-              }
-            }
             const def = ZOMBIE_TYPES[c.type];
             const gateScaling = 1 + (eng.currentGateLevel - 1) * 0.35 + (eng.wave - 1) * 0.18;
             const hpScale = gateScaling * (c.hpMul || 1);
@@ -2267,7 +2267,8 @@ export default function App() {
               r: def.r,
               hp: def.hp * hpScale,
               hpMax: def.hp * hpScale,
-              summoned: !c.bypassCap,
+              summoned: true,
+              summonWave: c.waveId,
               speed: def.speed * (1 + (eng.currentGateLevel - 1) * 0.05),
               dmg: def.dmg * (1 + (eng.currentGateLevel - 1) * 0.25),
               color: def.color,
@@ -2469,7 +2470,13 @@ export default function App() {
         for (let i = eng.bossOrbs.length - 1; i >= 0; i--) {
           const orb = eng.bossOrbs[i];
           if (orb.kind === 'missile') steerMissile(orb, player.x, player.y);
-          else if (orb.kind === 'throw') orb.spin = (orb.spin || 0) + dt * 0.022;
+          else if (orb.kind === 'throw') {
+            if (updateThrownWeapon(orb, eng.boss, dt) === 'caught') {
+              createParticles(orb.x, orb.y, '#cfd3da', 12, 6, 300);
+              eng.bossOrbs.splice(i, 1);
+              continue;
+            }
+          }
           orb.x += orb.vx;
           orb.y += orb.vy;
           orb.life -= dt;
@@ -2885,6 +2892,7 @@ export default function App() {
     engineRef.current.cracks = [];
     engineRef.current.bossOrbs = [];
     resetPhase3(engineRef.current.phase3);
+    engineRef.current.lastSummonWaveId = 0;
     engineRef.current.decals = [];
     engineRef.current.boxes = [];
     engineRef.current.turrets = [];
