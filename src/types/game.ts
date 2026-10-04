@@ -72,6 +72,10 @@ export interface PlayerState {
   };
   pushVx?: number;
   pushVy?: number;
+  /** Knockback velocity in px/ms (see knockback.ts). */
+  kbVx?: number;
+  kbVy?: number;
+  kbReadyAt?: number;
   /** Timestamp (performance.now) until which the player is drawn red after a heavy hit. */
   hurtUntil?: number;
 }
@@ -195,7 +199,6 @@ export interface Boss {
   // Universal charge fix — travel the full telegraphed lane, hit once for real damage
   chargeDistTraveled?: number;
   chargeHitPlayer?: boolean;
-  chargeCarry?: boolean; // rammed: the player rides the dash and is dropped just past the boss
   // Phase 3 "Phantom Split" — 3 bodies, each goes dizzy after taking a slice of the phase-3 pool
   splitDone?: boolean;
   splitActive?: boolean;

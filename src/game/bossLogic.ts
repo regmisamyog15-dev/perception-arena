@@ -1,8 +1,9 @@
 import { Boss, PlayerState, Shockwave, Crack, Tank, Bullet, BossOrb, Phase3State } from '../types/game';
 import { startSplit, spawnMeteor } from './bossPhase3';
+import { applyKnockback, cancelKnockback } from './knockback';
 import {
   BOSS_TELEGRAPHS, BOSS_QUOTES, CHARGE_LANE_LEN,
-  CHARGE_WINDUP_MS, CHARGE_DASH_MS, CHARGE_RECOVER_MS, CHARGE_KNOCK_GAP, SPLIT_STAT_MUL,
+  CHARGE_WINDUP_MS, CHARGE_DASH_MS, CHARGE_RECOVER_MS, KNOCKBACK_UNITS, SPLIT_STAT_MUL,
   MISSILE_SPEED_MUL, MISSILE_MAX_FIRED, MISSILE_HP, MISSILE_FIRST_MS, MISSILE_GAP_MS,
   METEOR_DMG, CRATER_DPS, THROW_SPEED, THROW_DMG,
   SUMMON_WAVE_INTERVAL_MS, SUMMON_WAVE_GIANTS, SUMMON_WAVE_RUNNERS, SUMMON_WAVE_RUNNER_HP_MUL,
@@ -723,11 +724,7 @@ export function updateBossAI(
       if (pd < radius && !tank.mounted) {
         applyPlayerDamage(leapDmg);
         flashVignette();
-        // Push Player with reasonable impulse
-        const pushAng = Math.atan2(player.y - boss.y, player.x - boss.x) + (Math.random() - 0.5) * 0.3;
-        const pushMag = 12 * (boss.enraged ? 1.25 : 1.0);
-        player.pushVx = Math.cos(pushAng) * pushMag;
-        player.pushVy = Math.sin(pushAng) * pushMag;
+        applyKnockback(player, boss.x, boss.y, now);
         spawnFloater(player.x, player.y - 40, `SLAM! -${leapDmg}`, '#ff4d5e', 24);
       }
 
@@ -797,19 +794,18 @@ export function updateBossAI(
     if (boss.stateTimer <= 0) {
       boss.state = 'charging';
       // Safety cap only; the dash itself lasts CHARGE_DASH_MS. NOTE: no re-aim here —
-      // the red lane the player was shown IS the lane that fires, so the 0.4s
-      // telegraph is a fair, readable dodge window.
-      boss.stateTimer = 600;
+      // the red lane the player was shown IS the lane that fires.
+      boss.stateTimer = CHARGE_DASH_MS + 600;
       boss.chargeDistTraveled = 0;
       boss.chargeHitPlayer = false;
-      boss.chargeCarry = false;
     }
   } else if (boss.state === 'charging') {
     boss.squash = 1.15;
     const ang = boss.chargeAng || 0;
     const cosA = Math.cos(ang);
     const sinA = Math.sin(ang);
-    // The whole lane is covered in ~CHARGE_DASH_MS: effectively instant.
+    // The boss is DRAGGED along the lane, start point to end point, at a constant
+    // speed (a visible slide, never a teleport). The whole lane takes ~CHARGE_DASH_MS.
     const remaining = CHARGE_LANE_LEN - (boss.chargeDistTraveled || 0);
     const step = Math.max(0, Math.min(remaining, (CHARGE_LANE_LEN / CHARGE_DASH_MS) * dt));
     const px0 = boss.x;
@@ -820,13 +816,11 @@ export function updateBossAI(
     boss.facingAng = ang;
     boss.chargeDistTraveled = (boss.chargeDistTraveled || 0) + step;
 
-    // Red streak along everything covered this tick
-    for (let k = 0; k <= 4; k++) {
-      createParticles(px0 + (boss.x - px0) * (k / 4), py0 + (boss.y - py0) * (k / 4), '#ff4d5e', 2, 5, 220);
-    }
+    // Dust + red streak behind it so the drag reads clearly
+    createParticles(px0, py0, '#ff4d5e', 2, 4, 260);
+    createParticles(boss.x - cosA * boss.r, boss.y - sinA * boss.r + boss.r * 0.6, '#b9a98c', 2, 3, 300);
 
     // Swept hit across the full width of the lane over the ground covered this tick
-    // (a point check would tunnel straight through the player at this speed).
     if (!boss.chargeHitPlayer && !tank.mounted) {
       const dx = player.x - px0;
       const dy = player.y - py0;
@@ -841,31 +835,13 @@ export function updateBossAI(
           flashVignette();
           spawnFloater(player.x, player.y - 40, `-${chargeDmg} RAMMED!`, '#ff4d5e', 22);
           boss.chargeHitPlayer = true;
-          boss.chargeCarry = true; // knocked back: rides the dash, dropped just past the boss
+          addScreenShake(14);
+          applyKnockback(player, boss.x, boss.y, now); // Minecraft-style: thrown 46 units away from the boss
         }
       }
     }
 
-    // A rammed player is carried at the boss's front for the rest of the dash
-    if (boss.chargeCarry) {
-      player.x = boss.x + cosA * (boss.r + player.r + 4);
-      player.y = boss.y + sinA * (boss.r + player.r + 4);
-      player.pushVx = 0;
-      player.pushVy = 0;
-    }
-
     if ((boss.chargeDistTraveled || 0) >= CHARGE_LANE_LEN - 0.001 || boss.stateTimer <= 0) {
-      if (boss.chargeCarry) {
-        // Land just CHARGE_KNOCK_GAP past where the boss stopped
-        const gap = boss.r + player.r + CHARGE_KNOCK_GAP;
-        player.x = Math.max(bounds.minX + player.r, Math.min(bounds.maxX - player.r, boss.x + cosA * gap));
-        player.y = Math.max(bounds.minY + player.r, Math.min(bounds.maxY - player.r, boss.y + sinA * gap));
-        player.pushVx = 0;
-        player.pushVy = 0;
-        boss.chargeCarry = false;
-        addScreenShake(16);
-        createParticles(player.x, player.y, '#ff4d5e', 16, 7, 300);
-      }
       boss.state = 'chargeRecover';
       boss.stateTimer = CHARGE_RECOVER_MS; // completely still for 1 second, then it moves again
       createParticles(boss.x, boss.y, '#999', 20, 6);
@@ -1059,10 +1035,7 @@ export function updateBossAI(
         applyPlayerDamage(blinkDmg);
         flashVignette();
         spawnFloater(player.x, player.y - 40, `-${blinkDmg} BLINK STRIKE`, '#9fdb6e', 22);
-        // Gentle knockback
-        const pAng = Math.atan2(player.y - boss.y, player.x - boss.x);
-        player.pushVx = Math.cos(pAng) * 10;
-        player.pushVy = Math.sin(pAng) * 10;
+        applyKnockback(player, boss.x, boss.y, now);
       }
       addScreenShake(16);
       // COMBO: TELEPORT → SLASH. After the blink strike lands (or whiffs),
@@ -1091,9 +1064,7 @@ export function updateBossAI(
     if (Math.hypot(player.x - boss.x, player.y - boss.y) < boss.r + 75 && !tank.mounted) {
       applyPlayerDamage(spinDmg);
       flashVignette();
-      const pAng = Math.atan2(player.y - boss.y, player.x - boss.x);
-      player.pushVx = Math.cos(pAng) * 8;
-      player.pushVy = Math.sin(pAng) * 8;
+      applyKnockback(player, boss.x, boss.y, now, KNOCKBACK_UNITS, 450); // once per pass, not every frame
     }
     if (boss.stateTimer <= 0) {
       boss.state = 'chasing';
@@ -1232,8 +1203,7 @@ export function updateBossAI(
       player.x += (pdx / pd) * pullStep;
       player.y += (pdy / pd) * pullStep;
     }
-    player.pushVx = 0;
-    player.pushVy = 0;
+    cancelKnockback(player); // the yank overrides any slide in progress
     createParticles(player.x, player.y, '#c9c9d6', 2, 4, 220);
     if (pd - pullStep <= stopGap + 1 || boss.stateTimer <= 0) {
       // Arrived: straight into the combo
@@ -1269,8 +1239,7 @@ export function updateBossAI(
         applyPlayerDamage(cDmg);
         if (player.hp < hp0) {
           flashVignette();
-          player.pushVx = Math.cos(a) * step.knock;
-          player.pushVy = Math.sin(a) * step.knock;
+          applyKnockback(player, boss.x, boss.y, now);
           spawnFloater(player.x, player.y - 40, `-${cDmg} ${step.name}`, '#ff9a3c', 20);
         }
       }

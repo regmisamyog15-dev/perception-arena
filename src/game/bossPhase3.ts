@@ -1,3 +1,4 @@
+import { applyKnockback } from './knockback';
 import { Boss, BossClone, BossOrb, Crack, PlayerState, Tank, Phase3State, Zombie } from '../types/game';
 import {
   SPLIT_STAT_MUL,
@@ -202,8 +203,7 @@ function updateClones(
           const dmg = Math.round(CLONE_STRIKE_DMG * bossDmgScale(boss));
           fx.applyPlayerDamage(dmg);
           fx.flashVignette();
-          player.pushVx = Math.cos(ang) * 12;
-          player.pushVy = Math.sin(ang) * 12;
+          applyKnockback(player, c.x, c.y, now);
           fx.spawnFloater(player.x, player.y - 40, `-${dmg} CLONE STRIKE`, '#c9c9ff', 18);
         }
         fx.createParticles(c.x + Math.cos(ang) * c.r, c.y + Math.sin(ang) * c.r, '#c9c9ff', 10, 6, 300);
@@ -235,7 +235,7 @@ export function spawnMeteor(p3: Phase3State, x: number, y: number, dmg: number, 
   p3.meteors.push({ id: Math.random().toString(), x, y, t: 0, fallMs: METEOR_FALL_MS, dmg, dps });
 }
 
-function updateMeteors(p3: Phase3State, player: PlayerState, tank: Tank, dt: number, fx: Phase3Fx) {
+function updateMeteors(p3: Phase3State, player: PlayerState, tank: Tank, dt: number, now: number, fx: Phase3Fx) {
   for (let i = p3.meteors.length - 1; i >= 0; i--) {
     const m = p3.meteors[i];
     m.t += dt;
@@ -245,9 +245,7 @@ function updateMeteors(p3: Phase3State, player: PlayerState, tank: Tank, dt: num
     if (d < METEOR_BLAST_R + player.r && !tank.mounted) {
       fx.applyPlayerDamage(m.dmg);
       fx.flashVignette();
-      const a = Math.atan2(player.y - m.y, player.x - m.x);
-      player.pushVx = Math.cos(a) * 14;
-      player.pushVy = Math.sin(a) * 14;
+      applyKnockback(player, m.x, m.y, now);
       fx.spawnFloater(player.x, player.y - 40, `-${m.dmg} METEOR`, '#ff9a3c', 22);
     }
     p3.craters.push({ id: Math.random().toString(), x: m.x, y: m.y, r: CRATER_R, life: CRATER_LIFE_MS, maxLife: CRATER_LIFE_MS, dps: m.dps });
@@ -286,7 +284,7 @@ export function updatePhase3(
   fx: Phase3Fx
 ) {
   updateClones(p3, boss, player, tank, dt, now, bounds, fx);
-  updateMeteors(p3, player, tank, dt, fx);
+  updateMeteors(p3, player, tank, dt, now, fx);
   // The breaking dimension flashes on its own every couple of seconds (kept soft:
   // low peak brightness, never faster than every ~2s).
   if (boss.finalStand && now >= p3.flashAt) {

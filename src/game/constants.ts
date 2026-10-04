@@ -31,9 +31,11 @@ export const BOSS_SUPER_DMG_MUL = 1.2;
 
 // ---- Bull charge ("ramp") ----
 export const CHARGE_WINDUP_MS = 400;   // red lane is visible for just 0.4s before it fires
-export const CHARGE_DASH_MS = 130;     // ...then the dash covers the whole lane almost instantly
+export const CHARGE_DASH_MS = 600;     // ...then the boss is DRAGGED along the lane over this long (a visible slide, not a teleport)
 export const CHARGE_RECOVER_MS = 1000; // boss stands completely still for 1s afterwards
-export const CHARGE_KNOCK_GAP = 10;    // a rammed player is dropped this far past the boss's body
+// Minecraft-style knockback: an instant impulse away from the attacker that slides to a stop.
+export const KNOCKBACK_UNITS = 46;     // total distance the player is thrown
+export const KNOCKBACK_TAU_MS = 110;   // how quickly the slide decays (~95% of it done in 0.33s)
 
 // ---- Phase 3: Phantom Split, final stand ----
 export const SPLIT_STAT_MUL = 0.5;        // every body deals half damage while split

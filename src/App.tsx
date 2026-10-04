@@ -56,6 +56,7 @@ import {
 import { generateWorldStructures } from './game/structures';
 import { updateTowersAndClimbing } from './game/towerLogic';
 import { updateBossAI, shatterPhantomDecoy } from './game/bossLogic';
+import { stepKnockback, applyKnockback } from './game/knockback';
 import { createPhase3State, resetPhase3, updatePhase3, damageSplitBody, steerMissile, wipeOldSummons, updateThrownWeapon } from './game/bossPhase3';
 import { renderGameScene } from './game/renderWorld';
 import { preloadAllSprites } from './game/sprites';
@@ -1856,6 +1857,9 @@ export default function App() {
           player.y += moveY * currentSpeed;
         }
 
+        // Minecraft-style knockback slide (boss hits set kbVx/kbVy; clamped to bounds just below)
+        stepKnockback(player, dt);
+
         if (tank.mounted) {
           tank.x = player.x;
           tank.y = player.y;
@@ -2487,6 +2491,7 @@ export default function App() {
           if (Math.hypot(player.x - orb.x, player.y - orb.y) < player.r + orb.r && !tank.mounted) {
             applyPlayerDamage(orb.dmg);
             flashVignette();
+            applyKnockback(player, orb.x, orb.y, performance.now());
             spawnFloatingText(player.x, player.y - 40, `-${orb.dmg} ${orb.kind === 'throw' ? 'WEAPON HIT!' : orb.kind === 'missile' ? 'MISSILE HIT!' : 'ORB HIT!'}`, '#ffd166', 22);
             createParticles(orb.x, orb.y, '#ffd166', 26, 9, 400);
             addScreenShake(14);
