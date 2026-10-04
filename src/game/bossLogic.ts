@@ -1276,8 +1276,12 @@ export function updateBossAI(
     boss.height = 0;
     if (Math.random() < 0.35) createParticles(boss.x + (Math.random() - 0.5) * boss.r, boss.y - boss.r * 0.8, '#ffe066', 1, 2, 500);
     if (!boss.splitActive) {
-      boss.state = 'chasing';
-      boss.stateTimer = boss.cycleMs;
+      // Posture-break stagger keeps the boss down until staggerUntil
+      if (boss.staggerUntil === undefined || now >= boss.staggerUntil) {
+        boss.staggerUntil = undefined;
+        boss.state = 'chasing';
+        boss.stateTimer = boss.cycleMs;
+      }
     } else if (boss.splitDizzy && p3.clones.length === 0) {
       // Every clone has been dragged in: the real boss wakes holding the remaining "final hearts".
       boss.splitActive = false;

@@ -49,6 +49,7 @@ import {
   playAlertStinger,
   playUpgradeSound,
   playPlayerHurtSound,
+  playTowerHitSound,
   startBgmMusic,
   stopBgmMusic,
   unlockAudio,
@@ -57,6 +58,10 @@ import { generateWorldStructures } from './game/structures';
 import { updateTowersAndClimbing } from './game/towerLogic';
 import { updateBossAI, shatterPhantomDecoy } from './game/bossLogic';
 import { stepKnockback, applyKnockback } from './game/knockback';
+import {
+  addPosture, addMomentum, tickCombat, tryStartParry, classifyIncomingHit, momentumDamageMul,
+  isStaggered, PERFECT_DODGE_BONUS_MS,
+} from './game/combat';
 import { createPhase3State, resetPhase3, updatePhase3, damageSplitBody, steerMissile, wipeOldSummons, updateThrownWeapon } from './game/bossPhase3';
 import { renderGameScene } from './game/renderWorld';
 import { preloadAllSprites } from './game/sprites';
@@ -600,7 +605,7 @@ export default function App() {
       // well no matter what the boss was doing; now positioning + timing
       // actually matter: tank a committed attack and it barely dents them,
       // dodge it clean and the recovery window afterward is wide open.
-      const isRecovering = boss.state === 'chargeRecover' || boss.state === 'tripped' ||
+      const isRecovering = isStaggered(boss, performance.now()) || boss.state === 'chargeRecover' || boss.state === 'tripped' ||
         boss.state === 'despRecover' || boss.state === 'comboRecover' ||
         (boss.state === 'landing' && (boss.height || 0) <= 0);
       const isCommitted = boss.state === 'charging' || boss.state === 'spinning' ||
@@ -614,9 +619,21 @@ export default function App() {
       }
     }
 
+    if ('skin' in ent) dmgMultiplier *= momentumDamageMul(engineRef.current.player);
     const dmg = rawDmg * dmgMultiplier;
     ent.hp -= dmg;
     (ent as any).lastHit = performance.now();
+
+    // Posture + momentum: melee/heavy hits break posture fastest; a fresh perfect dodge doubles it
+    if ('skin' in ent) {
+      const nowH = performance.now();
+      const pl = engineRef.current.player;
+      let posture = rawDmg * (isRanged === false ? 0.35 : 0.12);
+      if (nowH < (pl.perfectDodgeUntil ?? 0)) posture *= 2;
+      posture *= 1 + ((pl.momentum ?? 0) / 100) * 0.5;
+      addPosture(ent as Boss, posture, nowH, { text: spawnFloatingText, shake: addScreenShake, burst: createParticles });
+      addMomentum(pl, isRanged === false ? 3 : 0.8, nowH);
+    }
 
     const vampiric = sp.vampiric_strikes;
     if (vampiric && vampiric.unlocked && vampiric.equipped) {
@@ -852,9 +869,43 @@ export default function App() {
     if (isEntityInsideBase(player.x, player.y, engineRef.current.base)) return;
     const aegis = engineRef.current.superpowers.divine_aegis;
     if (aegis && aegis.activeUntil > performance.now()) return;
-    if (performance.now() < player.dashLockedUntil) return;
+    const nowT = performance.now();
+    const eng0 = engineRef.current;
+    const defense = classifyIncomingHit(player, dmg, nowT);
+    if (defense.kind === 'parry') {
+      // Perfect parry: negate the hit, break the boss's posture, reward momentum
+      player.parryUntil = 0;
+      player.parryCdUntil = nowT + 150; // successful parry refunds the cooldown
+      spawnFloatingText(player.x, player.y - 55, 'PARRY!', '#ffd166', 26);
+      createParticles(player.x, player.y, '#ffb703', 22, 9, 380);
+      addScreenShake(14);
+      playTowerHitSound();
+      addMomentum(player, 25, nowT);
+      if (eng0.boss && !eng0.boss.dead) {
+        const near = Math.hypot(eng0.boss.x - player.x, eng0.boss.y - player.y) < eng0.boss.r + 420;
+        addPosture(eng0.boss, near ? (isRanged ? 20 : 45) : 15, nowT, { text: spawnFloatingText, shake: addScreenShake, burst: createParticles });
+      }
+      return;
+    }
+    if (nowT < player.dashLockedUntil) {
+      if (defense.kind === 'perfectDodge' && (player.perfectDodgeUntil ?? 0) < nowT) {
+        // Dashed through a heavy hit at the last moment
+        player.perfectDodgeUntil = nowT + PERFECT_DODGE_BONUS_MS;
+        player.dashLock = 0; // instant dash refill so you can chase / re-dodge
+        spawnFloatingText(player.x, player.y - 55, 'PERFECT DODGE!', '#83d3e1', 24);
+        createParticles(player.x, player.y, '#83d3e1', 18, 8, 320);
+        addScreenShake(6);
+        addMomentum(player, 20, nowT);
+      }
+      return;
+    }
 
     let finalDmg = dmg;
+    if (defense.kind === 'lateBlock') {
+      finalDmg *= 0.5;
+      spawnFloatingText(player.x, player.y - 55, 'BLOCK', '#c0c0c0', 16);
+    }
+    if (dmg >= 15) addMomentum(player, -30, nowT); // taking a real hit bleeds momentum
     if (player.inCoverId && isRanged) {
       finalDmg *= 0.4; // 60% cover damage reduction
     }
@@ -930,7 +981,7 @@ export default function App() {
         return next;
       });
     }
-  }, [flashVignette, spawnFloatingText, addScreenShake, showAlert, saveProgress, clearSavedProgress]);
+  }, [flashVignette, spawnFloatingText, addScreenShake, showAlert, saveProgress, clearSavedProgress, createParticles]);
 
   const handleToggleEquipSkill = useCallback((id: string) => {
     const res = toggleEquipPowerStand(engineRef.current.superpowers, id);
@@ -1741,6 +1792,13 @@ export default function App() {
       if (e.key === 'f' || e.key === 'F') toggleTank();
       if (e.key === 'r' || e.key === 'R') tryDoorInteract();
       if (e.key === 'c' || e.key === 'C') performGroundSlam();
+      // Parry / Counter [X] — time it just before a heavy hit lands
+      if ((e.key === 'x' || e.key === 'X') && !e.repeat) {
+        const eng = engineRef.current;
+        if (!eng.tank.mounted && tryStartParry(eng.player, performance.now())) {
+          createParticles(eng.player.x, eng.player.y, '#ffd166', 6, 4, 180);
+        }
+      }
 
       // Dash / Dodge [Shift] — short i-frame burst on a cooldown
       if (e.key === 'Shift') {
@@ -1769,6 +1827,7 @@ export default function App() {
           p.dashVx = dx * DASH_SPEED;
           p.dashVy = dy * DASH_SPEED;
           p.dashLockedUntil = now + DASH_DURATION;
+          p.lastDashAt = now;
           p.dashLock = now + DASH_COOLDOWN;
           spawnFloatingText(p.x, p.y - 30, 'DASH!', '#83d3e1', 14);
           createParticles(p.x, p.y, '#83d3e1', 10, 6, 260);
@@ -1864,6 +1923,7 @@ export default function App() {
 
         // Minecraft-style knockback slide (boss hits set kbVx/kbVy; clamped to bounds just below)
         stepKnockback(player, dt);
+        tickCombat(player, eng.boss, nowTs, dt);
 
         if (tank.mounted) {
           tank.x = player.x;

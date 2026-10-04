@@ -58,6 +58,13 @@ export interface PlayerState {
   dashVx: number;
   dashVy: number;
   dashLockedUntil: number;
+  // Skill-combat layer (see game/combat.ts)
+  lastDashAt?: number;
+  parryUntil?: number;
+  parryCdUntil?: number;
+  momentum?: number;
+  lastMomentumGain?: number;
+  perfectDodgeUntil?: number;
   onBoxId: string | null;
   onTowerId: string | null;
   elevation: number;
@@ -205,6 +212,11 @@ export interface Boss {
   splitMeter?: number;
   splitMeterMax?: number;
   splitDizzy?: boolean;
+  // Posture / stagger (see game/combat.ts)
+  posture?: number;
+  lastPostureHit?: number;
+  staggerUntil?: number;
+  staggerCount?: number;
   // Final stand ("final hearts"): meteors, thrown weapon, homing missile orb
   finalStand?: boolean;
   finalStandAt?: number;

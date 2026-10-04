@@ -22,6 +22,7 @@ import {
   BossOrb,
   Phase3State,
 } from '../types/game';
+import { drawCombatOverlay } from './combat';
 import { drawPhase3Ground, drawClones, drawPhase3Top, drawThrowAim, drawSpecialOrb, drawBossMeleeFx } from './renderPhase3';
 import { WORLD_W, WORLD_H, CHARGE_LANE_LEN } from './constants';
 import { drawBossSprite, drawZombieSprite, drawSoldierSprite } from './sprites';
@@ -1590,6 +1591,8 @@ export function renderGameScene(
       ctx.shadowBlur = 0;
     }
   }
+
+  drawCombatOverlay(ctx, boss ?? null, player, performance.now());
 
   // Phase 3 top layer: meteors, break meters, dizzy stars, light flash, throw aim line
   if (phase3) {
