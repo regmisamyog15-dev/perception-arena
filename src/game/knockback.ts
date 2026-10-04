@@ -67,3 +67,11 @@ export function stepKnockback(target: KnockbackTarget, dt: number) {
     target.kbVy = 0;
   }
 }
+
+/** Throw `target` `units` along the given direction vector (used for charge rams). */
+export function applyKnockbackDir(target: KnockbackTarget, dirX: number, dirY: number, units: number): void {
+  const d = Math.hypot(dirX, dirY) || 1;
+  const v0 = units / KNOCKBACK_TAU_MS;
+  target.kbVx = (dirX / d) * v0;
+  target.kbVy = (dirY / d) * v0;
+}

@@ -1,6 +1,7 @@
-import { applyKnockback } from './knockback';
+import { applyKnockback, applyKnockbackDir } from './knockback';
 import { Boss, BossClone, BossOrb, Crack, PlayerState, Tank, Phase3State, Zombie } from '../types/game';
 import {
+  RAM_KNOCKBACK_UNITS,
   SPLIT_STAT_MUL,
   SPLIT_CLONE_COUNT,
   SPLIT_BREAK_FRACTION,
@@ -35,7 +36,7 @@ export interface SplitFx {
 }
 
 export interface Phase3Fx extends SplitFx {
-  applyPlayerDamage: (dmg: number, isRanged?: boolean) => void;
+  applyPlayerDamage: (dmg: number, isRanged?: boolean, unparryable?: boolean) => void;
   flashVignette: () => void;
 }
 
@@ -95,6 +96,7 @@ export function startSplit(
       atkCd: 1200,
       meter: 0,
       meterMax: boss.splitMeterMax,
+      role: i === 0 ? 'rusher' : 'caster',
     });
     cloud(x, y);
   }
@@ -185,29 +187,67 @@ function updateClones(
 
     if (c.state === 'chasing') {
       const ang = Math.atan2(player.y - c.y, player.x - c.x);
-      c.facingAng = ang;
       const d = Math.hypot(player.x - c.x, player.y - c.y);
-      const speed = boss.baseSpeed * 0.85 * (boss.enraged ? 2 : 1);
-      if (d > c.r + player.r + 24) {
-        c.x += Math.cos(ang) * speed;
-        c.y += Math.sin(ang) * speed;
+      const speed = boss.baseSpeed * 0.85 * (boss.enraged ? 1.25 : 1);
+      c.squash = 1 + Math.sin(now / 90) * 0.06;
+
+      if (c.role === 'rusher') {
+        // RUSHER: stalks you, then telegraphs a lane and dashes through it (dodge with Shift)
+        if (c.act === 'windup') {
+          c.actTimer = (c.actTimer || 0) - dt;
+          c.squash = 0.8;
+          if ((c.actTimer || 0) <= 0) { c.act = 'dash'; c.actDist = 0; }
+        } else if (c.act === 'dash') {
+          const step = 15 * (dt / 16.67);
+          const a = c.actAng || 0;
+          c.x = clampTo(bounds, c.x + Math.cos(a) * step, 'x', c.r);
+          c.y = clampTo(bounds, c.y + Math.sin(a) * step, 'y', c.r);
+          c.actDist = (c.actDist || 0) + step;
+          c.facingAng = a;
+          c.squash = 1.2;
+          fx.createParticles(c.x, c.y, '#c9c9ff', 2, 3, 250);
+          if (!tank.mounted && Math.hypot(player.x - c.x, player.y - c.y) < c.r + player.r + 6) {
+            const dmg = Math.round(CLONE_STRIKE_DMG * 1.5 * bossDmgScale(boss));
+            const hp0 = player.hp;
+            fx.applyPlayerDamage(dmg);
+            if (player.hp < hp0) {
+              fx.flashVignette();
+              applyKnockbackDir(player, Math.cos(a), Math.sin(a), RAM_KNOCKBACK_UNITS);
+              fx.spawnFloater(player.x, player.y - 40, `-${dmg} PHANTOM RUSH`, '#c9c9ff', 20);
+              c.act = undefined;
+              c.atkCd = 2600;
+            }
+          }
+          if ((c.actDist || 0) >= 300) { c.act = undefined; c.atkCd = 2200; }
+        } else {
+          c.facingAng = ang;
+          if (d > c.r + player.r + 24) { c.x += Math.cos(ang) * speed; c.y += Math.sin(ang) * speed; }
+          c.atkCd -= dt;
+          if (c.atkCd <= 0 && d < 520) {
+            c.act = 'windup';
+            c.actTimer = 650;
+            c.actAng = ang; // lane locks now — move out of it
+          }
+        }
+      } else {
+        // CASTER: keeps its distance, strafes, and calls telegraphed meteor strikes on you
+        c.facingAng = ang;
+        const want = 340;
+        const strafe = ang + Math.PI / 2;
+        if (d < want - 40) { c.x -= Math.cos(ang) * speed; c.y -= Math.sin(ang) * speed; }
+        else if (d > want + 60) { c.x += Math.cos(ang) * speed; c.y += Math.sin(ang) * speed; }
+        else { c.x += Math.cos(strafe) * speed * 0.7; c.y += Math.sin(strafe) * speed * 0.7; }
+        c.atkCd -= dt;
+        if (c.atkCd <= 0) {
+          c.atkCd = 2800;
+          c.squash = 0.8;
+          // Lead the target slightly so standing still gets punished but moving works
+          spawnMeteor(p3, player.x + (Math.random() - 0.5) * 60, player.y + (Math.random() - 0.5) * 60, Math.round(32 * bossDmgScale(boss)), 0);
+          fx.spawnFloater(c.x, c.y - c.r - 30, '☄️ CASTING', '#c9c9ff', 14);
+        }
       }
       c.x = clampTo(bounds, c.x, 'x', c.r);
       c.y = clampTo(bounds, c.y, 'y', c.r);
-      c.squash = 1 + Math.sin(now / 90) * 0.06;
-      c.atkCd -= dt;
-      if (d < c.r + player.r + 40 && c.atkCd <= 0) {
-        c.atkCd = 1400;
-        c.squash = 0.8;
-        if (!tank.mounted) {
-          const dmg = Math.round(CLONE_STRIKE_DMG * bossDmgScale(boss));
-          fx.applyPlayerDamage(dmg);
-          fx.flashVignette();
-          applyKnockback(player, c.x, c.y, now);
-          fx.spawnFloater(player.x, player.y - 40, `-${dmg} CLONE STRIKE`, '#c9c9ff', 18);
-        }
-        fx.createParticles(c.x + Math.cos(ang) * c.r, c.y + Math.sin(ang) * c.r, '#c9c9ff', 10, 6, 300);
-      }
     } else if (c.state === 'dizzy') {
       c.squash = 1 + Math.sin(now / 140) * 0.1;
     } else {
@@ -284,6 +324,24 @@ export function updatePhase3(
   fx: Phase3Fx
 ) {
   updateClones(p3, boss, player, tank, dt, now, bounds, fx);
+  if (boss.splitActive && !boss.splitDizzy && boss.state === 'chasing' && p3.clones.length > 0) {
+    if (p3.shuffleAt === undefined) p3.shuffleAt = now + 8000;
+    if (now >= p3.shuffleAt) {
+      const live = p3.clones.filter((c) => c.state === 'chasing');
+      if (live.length) {
+        const c = live[Math.floor(Math.random() * live.length)];
+        const bx = boss.x, by = boss.y;
+        fx.createParticles(bx, by, '#9d4edd', 24, 7, 500);
+        fx.createParticles(c.x, c.y, '#9d4edd', 24, 7, 500);
+        boss.x = c.x; boss.y = c.y; c.x = bx; c.y = by;
+        fx.spawnFloater(boss.x, boss.y - boss.r - 60, '🔀 SHUFFLE!', '#c9c9ff', 20);
+        fx.addScreenShake(8);
+      }
+      p3.shuffleAt = now + 8000 + Math.random() * 3000;
+    }
+  } else if (!boss.splitActive) {
+    p3.shuffleAt = undefined;
+  }
   updateMeteors(p3, player, tank, dt, now, fx);
   // The breaking dimension flashes on its own every couple of seconds (kept soft:
   // low peak brightness, never faster than every ~2s).

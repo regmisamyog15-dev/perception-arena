@@ -611,6 +611,7 @@ export default function App() {
       const isCommitted = boss.state === 'charging' || boss.state === 'spinning' ||
         boss.state === 'laserSweep' || boss.state === 'solarBeam' || boss.state === 'airborne' ||
         boss.state === 'despStrike';
+      if (boss.state === 'orbCharge') dmgMultiplier *= 0.25;
       if (isRecovering) {
         dmgMultiplier *= 1.6;
         if (Math.random() < 0.35) spawnFloatingText(boss.x, boss.y - boss.r - 40, 'PUNISH!', '#7ee787', 15);
@@ -861,7 +862,7 @@ export default function App() {
     spawnFloatingText(player.x, player.y - 100, `⚠️ BOSS: ${skin.name}`, '#ff4d5e', 24);
   }, [createParticles, showAlert, spawnFloatingText]);
 
-  const applyPlayerDamage = useCallback((dmg: number, isRanged = false) => {
+  const applyPlayerDamage = useCallback((dmg: number, isRanged = false, unparryable = false) => {
     const player = engineRef.current.player;
     if (player.hp <= 0) return;
 
@@ -871,7 +872,8 @@ export default function App() {
     if (aegis && aegis.activeUntil > performance.now()) return;
     const nowT = performance.now();
     const eng0 = engineRef.current;
-    const defense = classifyIncomingHit(player, dmg, nowT);
+    let defense = classifyIncomingHit(player, dmg, nowT);
+    if (unparryable && (defense.kind === 'parry' || defense.kind === 'lateBlock')) defense = { kind: 'none' }; // SMASH: dodge it
     if (defense.kind === 'parry') {
       // Perfect parry: negate the hit, break the boss's posture, reward momentum
       player.parryUntil = 0;
@@ -2407,7 +2409,21 @@ export default function App() {
           // Player / Turret / Soldier Bullet hitting Boss or Zombies or Elite Guards
           if (b.cls !== 'zombiebullet' && b.cls !== 'zfireball' && b.cls !== 'elitebullet') {
             let hit = false;
-            if (!b.noBossDamage && eng.boss && eng.boss.state !== 'entering') {
+            // Void orb over the boss's head takes priority over the boss body
+            for (let oi = eng.bossOrbs.length - 1; oi >= 0 && !hit; oi--) {
+              const co = eng.bossOrbs[oi];
+              if (co.kind !== 'charge') continue;
+              if (distToSegment(co.x, co.y, prevX, prevY, b.x, b.y) < co.r + 10) {
+                co.hp -= b.dmg;
+                createParticles(co.x, co.y, '#c77dff', 6, 6);
+                if (co.hp <= 0) {
+                  createParticles(co.x, co.y, '#c77dff', 36, 11, 500);
+                  eng.bossOrbs.splice(oi, 1);
+                }
+                hit = true;
+              }
+            }
+            if (!hit && !b.noBossDamage && eng.boss && eng.boss.state !== 'entering') {
               const dBoss = distToSegment(eng.boss.x, eng.boss.y, prevX, prevY, b.x, b.y);
               if (dBoss < eng.boss.r + 8) {
                 if (b.splash) {
@@ -2538,6 +2554,12 @@ export default function App() {
         // Update Boss Orbs — big slow dodgeable projectiles
         for (let i = eng.bossOrbs.length - 1; i >= 0; i--) {
           const orb = eng.bossOrbs[i];
+          if (orb.kind === 'charge') {
+            // Held over the boss's head by the boss AI; harmless until launched
+            orb.life -= dt;
+            if (orb.life <= 0) eng.bossOrbs.splice(i, 1);
+            continue;
+          }
           if (orb.kind === 'missile') steerMissile(orb, player.x, player.y);
           else if (orb.kind === 'throw') {
             if (updateThrownWeapon(orb, eng.boss, dt) === 'caught') {
@@ -2557,7 +2579,7 @@ export default function App() {
             applyPlayerDamage(orb.dmg);
             flashVignette();
             applyKnockback(player, orb.x, orb.y, performance.now());
-            spawnFloatingText(player.x, player.y - 40, `-${orb.dmg} ${orb.kind === 'throw' ? 'WEAPON HIT!' : orb.kind === 'missile' ? 'MISSILE HIT!' : 'ORB HIT!'}`, '#ffd166', 22);
+            spawnFloatingText(player.x, player.y - 40, `-${orb.dmg} ${orb.kind === 'throw' ? 'WEAPON HIT!' : orb.kind === 'missile' ? 'MISSILE HIT!' : 'ORB HIT!'}`, orb.kind === 'void' ? '#c77dff' : '#ffd166', 22);
             createParticles(orb.x, orb.y, '#ffd166', 26, 9, 400);
             addScreenShake(14);
             eng.bossOrbs.splice(i, 1);

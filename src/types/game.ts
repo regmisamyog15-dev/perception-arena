@@ -154,7 +154,7 @@ export interface Boss {
   baseSpeed: number;
   color: string;
   dead: boolean;
-  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField' | 'frostWindup' | 'frostBeam' | 'denialWindup' | 'despWindup' | 'despStrike' | 'despRecover' | 'splitCast' | 'dizzy' | 'meteorWindup' | 'meteorShower' | 'throwWindup' | 'pullWindup' | 'pulling' | 'comboWindup' | 'comboRecover';
+  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField' | 'frostWindup' | 'frostBeam' | 'denialWindup' | 'despWindup' | 'despStrike' | 'despRecover' | 'splitCast' | 'dizzy' | 'meteorWindup' | 'meteorShower' | 'throwWindup' | 'pullWindup' | 'pulling' | 'comboWindup' | 'comboRecover' | 'orbCharge';
   stateTimer: number;
   targetAng: number;
   facingAng: number;
@@ -214,6 +214,9 @@ export interface Boss {
   splitDizzy?: boolean;
   // Posture / stagger (see game/combat.ts)
   posture?: number;
+  meleeStreak?: number;      // combos in a row; triggers the void orb
+  chargeOrbId?: string;      // id of the purple orb being charged over the boss's head
+  chargeOrbStart?: number;
   lastPostureHit?: number;
   staggerUntil?: number;
   staggerCount?: number;
@@ -264,7 +267,7 @@ export interface BossOrb {
   dmg: number;
   life: number;
   /** 'orb' (default slow straight orb), 'missile' (phase 3 homing), 'throw' (thrown melee weapon). */
-  kind?: 'orb' | 'missile' | 'throw';
+  kind?: 'orb' | 'missile' | 'throw' | 'charge' | 'void';
   speed?: number; // missile cruise speed (px/frame)
   spin?: number;  // thrown weapon rotation
   travelled?: number; // thrown weapon: distance flown outbound
@@ -288,6 +291,11 @@ export interface BossClone {
   atkCd: number;
   meter: number;
   meterMax: number;
+  role?: 'rusher' | 'caster';
+  act?: 'windup' | 'dash';   // sub-action while state === 'chasing'
+  actTimer?: number;
+  actAng?: number;
+  actDist?: number;
 }
 
 export interface Meteor {
@@ -311,6 +319,7 @@ export interface Crater {
 }
 
 export interface Phase3State {
+  shuffleAt?: number;
   clones: BossClone[];
   meteors: Meteor[];
   craters: Crater[];
