@@ -63,7 +63,8 @@ function getPattern(ctx: CanvasRenderingContext2D, key: string, img: HTMLImageEl
   let pat = bgPatternCache.get(key);
   if (pat === undefined) {
     pat = ctx.createPattern(img, 'repeat');
-    bgPatternCache.set(key, pat);
+    // Don't cache a null (image not decoded yet) or the ground stays on the slow fallback forever
+    if (pat) bgPatternCache.set(key, pat);
   }
   return pat;
 }

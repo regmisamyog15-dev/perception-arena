@@ -25,6 +25,28 @@ function getImg(path: string): HTMLImageElement {
   return img;
 }
 
+
+// Perf: ctx.filter re-runs the CSS filter on the GPU/CPU every drawImage, which
+// tanks FPS with a tinted boss on screen. Bake each (sheet, filter) pair into an
+// offscreen canvas once and draw from that instead.
+const tintCache = new Map<string, HTMLCanvasElement>();
+function getTinted(img: HTMLImageElement, filter: string): CanvasImageSource {
+  const key = `${img.src}|${filter}`;
+  let c = tintCache.get(key);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    const cctx = c.getContext('2d');
+    if (cctx) {
+      cctx.filter = filter;
+      cctx.drawImage(img, 0, 0);
+    }
+    tintCache.set(key, c);
+  }
+  return c;
+}
+
 /** Call once at app start so sprites are already decoded by the time combat begins. */
 export function preloadAllSprites() {
   const bossSets: BossSpriteSet[] = ['caveman', 'goblin', 'viking'];
@@ -87,12 +109,11 @@ export function drawSpriteFrame(
   ctx.translate(x, y);
   if (opts.rotate) ctx.rotate(opts.rotate);
   if (opts.flipX) ctx.scale(-1, 1);
-  if (opts.filter) ctx.filter = opts.filter;
   if (opts.alpha !== undefined) ctx.globalAlpha = opts.alpha;
   const anchorY = opts.anchorY ?? 0.5;
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(
-    img,
+    opts.filter ? getTinted(img, opts.filter) : img,
     frameIdx * frameSize,
     0,
     frameSize,
@@ -130,12 +151,11 @@ function drawGridSpriteFrame(
   ctx.save();
   if (opts.rotate) ctx.rotate(opts.rotate);
   if (opts.flipX) ctx.scale(-1, 1);
-  if (opts.filter) ctx.filter = opts.filter;
   if (opts.alpha !== undefined) ctx.globalAlpha = opts.alpha;
   const anchorY = opts.anchorY ?? 0.5;
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(
-    img,
+    opts.filter ? getTinted(img, opts.filter) : img,
     col * frameSize,
     row * frameSize,
     frameSize,
@@ -250,10 +270,9 @@ export function drawBossSprite(
     const lean = anim === 'attack' ? Math.sin(now / 90) * 0.12 : 0;
     ctx.save();
     ctx.rotate(lean);
-    if (filter) ctx.filter = filter;
     if (opts.alpha !== undefined) ctx.globalAlpha = opts.alpha;
     if (!facingRight) ctx.scale(-1, 1);
-    ctx.drawImage(img, -destSize / 2, -destSize * 0.86, destSize, destSize);
+    ctx.drawImage(filter ? getTinted(img, filter) : img, -destSize / 2, -destSize * 0.86, destSize, destSize);
     ctx.restore();
     return true;
   }

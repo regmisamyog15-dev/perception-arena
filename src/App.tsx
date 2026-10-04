@@ -98,6 +98,7 @@ const MAX_DEATHS = 3; // player gets 3 free respawns at base; the 4th death is a
 // Perf budgets (see PERF notes in the PR): hard caps so a long fight can't grow these lists without limit.
 const MAX_PARTICLES = 400;
 const MAX_FLOATERS = 60;
+const MAX_DECALS = 80;
 // Recycled plain spark particles (createParticles only).
 const particlePool: Particle[] = [];
 
@@ -454,6 +455,8 @@ export default function App() {
   }, []);
 
   const addDecal = useCallback((x: number, y: number, r: number) => {
+    // Perf: decals were unbounded (12s life each) — cap so long fights don't pile up
+    if (engineRef.current.decals.length >= MAX_DECALS) engineRef.current.decals.shift();
     engineRef.current.decals.push({
       id: Math.random().toString(),
       x,
@@ -1816,7 +1819,9 @@ export default function App() {
     const gameLoop = (time: number) => {
       const eng = engineRef.current;
       if (!eng.lastTime) eng.lastTime = time;
-      const dt = Math.min(100, time - eng.lastTime);
+      // rAF `time` can be slightly BEHIND performance.now() (lastTime is seeded with it on start/resume),
+      // which made dt negative. Clamp both ends.
+      const dt = Math.max(0, Math.min(100, time - eng.lastTime));
       eng.lastTime = time;
 
       if (gameState === 'playing' && !shopOpen && !mapOpen) {
