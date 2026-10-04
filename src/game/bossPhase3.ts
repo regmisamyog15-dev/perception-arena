@@ -1,5 +1,6 @@
 import { applyKnockback, applyKnockbackDir } from './knockback';
-import { Boss, BossClone, BossOrb, Crack, PlayerState, Tank, Phase3State, Zombie } from '../types/game';
+import { addPosture } from './combat';
+import { Boss, BossClone, BossEcho, BossOrb, Crack, PlayerState, Tank, Phase3State, Zombie } from '../types/game';
 import {
   RAM_KNOCKBACK_UNITS,
   SPLIT_STAT_MUL,
@@ -41,11 +42,13 @@ export interface Phase3Fx extends SplitFx {
 }
 
 export function createPhase3State(): Phase3State {
-  return { clones: [], meteors: [], craters: [], flash: 0, flashAt: 0, crackX: 0, crackY: 0, crackSeed: 1 };
+  return { clones: [], echoes: [], meteors: [], craters: [], flash: 0, flashAt: 0, crackX: 0, crackY: 0, crackSeed: 1 };
 }
 
 export function resetPhase3(p3: Phase3State) {
   p3.clones.length = 0;
+  p3.echoes.length = 0;
+  p3.barrageAt = undefined;
   p3.meteors.length = 0;
   p3.craters.length = 0;
   p3.flash = 0;
@@ -271,6 +274,106 @@ function updateClones(
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Mirror Barrage — Doctor Strange vs Thanos. A ring of fragile mirror-dimension
+// echoes opens around the player (orange sigils), then they all lunge in a rolling
+// volley from every side. Shatter them first (any hit does it), or dash through a gap.
+// ---------------------------------------------------------------------------
+const ECHO_COUNT = 8;
+const ECHO_RING_R = 360;
+const ECHO_TELEGRAPH_MS = 900;
+const ECHO_STAGGER_MS = 130;
+const ECHO_SPEED = 15;       // px per 16.7ms frame
+const ECHO_MAX_DIST = 520;
+const ECHO_DMG = 26;
+const BARRAGE_GAP_MS = 9000;
+
+function spawnMirrorBarrage(
+  p3: Phase3State,
+  player: PlayerState,
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+  fx: SplitFx
+) {
+  const off = Math.random() * Math.PI * 2;
+  for (let i = 0; i < ECHO_COUNT; i++) {
+    const a = off + (i / ECHO_COUNT) * Math.PI * 2;
+    const x = clampTo(bounds, player.x + Math.cos(a) * ECHO_RING_R, 'x', 40);
+    const y = clampTo(bounds, player.y + Math.sin(a) * ECHO_RING_R, 'y', 40);
+    p3.echoes.push({
+      id: Math.random().toString(), x, y, r: 30, ang: Math.atan2(player.y - y, player.x - x),
+      state: 'telegraph', t: 0, delay: i * ECHO_STAGGER_MS, dist: 0,
+    });
+    fx.createParticles(x, y, '#ff9a3c', 14, 5, 450);
+  }
+  p3.barrageTotal = ECHO_COUNT;
+  p3.barrageShattered = 0;
+  p3.barrageHit = false;
+  fx.spawnFloater(player.x, player.y - 110, '🌀 MIRROR DIMENSION!', '#ff9a3c', 24);
+  fx.addScreenShake(10);
+}
+
+/** Shatter one echo (called from bullet / melee / slam / blast hit sites). */
+export function shatterEcho(p3: Phase3State, boss: Boss | null, idx: number, fx: SplitFx) {
+  const e = p3.echoes[idx];
+  if (!e) return;
+  fx.createParticles(e.x, e.y, '#ff9a3c', 18, 8, 420);
+  fx.createParticles(e.x, e.y, '#ffe0b0', 8, 5, 300);
+  p3.echoes.splice(idx, 1);
+  p3.barrageShattered = (p3.barrageShattered || 0) + 1;
+  if (p3.echoes.length === 0 && !p3.barrageHit && (p3.barrageShattered || 0) >= (p3.barrageTotal || 0) && boss) {
+    // Every echo broken before one connected: the real boss reels
+    fx.spawnFloater(boss.x, boss.y - boss.r - 70, '🪞 MIRROR SHATTERED!', '#ffd166', 24);
+    addPosture(boss, 45, performance.now(), { text: fx.spawnFloater, shake: fx.addScreenShake, burst: fx.createParticles });
+  }
+}
+
+/** Shatter every echo within `radius` of a point (melee swings, slams, explosions). */
+export function shatterEchoesNear(p3: Phase3State, boss: Boss | null, x: number, y: number, radius: number, fx: SplitFx) {
+  for (let i = p3.echoes.length - 1; i >= 0; i--) {
+    const e = p3.echoes[i];
+    if (Math.hypot(e.x - x, e.y - y) < radius + e.r) shatterEcho(p3, boss, i, fx);
+  }
+}
+
+function updateEchoes(
+  p3: Phase3State, boss: Boss, player: PlayerState, tank: Tank, dt: number,
+  bounds: { minX: number; maxX: number; minY: number; maxY: number }, fx: Phase3Fx
+) {
+  for (let i = p3.echoes.length - 1; i >= 0; i--) {
+    const e: BossEcho = p3.echoes[i];
+    e.t += dt;
+    if (e.state === 'telegraph') {
+      e.ang = Math.atan2(player.y - e.y, player.x - e.x); // keeps tracking until it launches
+      if (e.t >= ECHO_TELEGRAPH_MS + e.delay) { e.state = 'dash'; e.t = 0; e.dist = 0; }
+      continue;
+    }
+    const step = ECHO_SPEED * (dt / 16.67);
+    e.x += Math.cos(e.ang) * step;
+    e.y += Math.sin(e.ang) * step;
+    e.dist += step;
+    if (Math.random() < 0.6) fx.createParticles(e.x, e.y, '#ff9a3c', 1, 2, 250);
+    if (!tank.mounted && Math.hypot(player.x - e.x, player.y - e.y) < e.r + player.r) {
+      const dmg = Math.round(ECHO_DMG * bossDmgScale(boss));
+      const hp0 = player.hp;
+      fx.applyPlayerDamage(dmg);
+      p3.barrageHit = true;
+      if (player.hp < hp0) {
+        fx.flashVignette();
+        applyKnockbackDir(player, Math.cos(e.ang), Math.sin(e.ang), RAM_KNOCKBACK_UNITS);
+        fx.spawnFloater(player.x, player.y - 40, `-${dmg} MIRROR STRIKE`, '#ff9a3c', 18);
+      }
+      fx.createParticles(e.x, e.y, '#ff9a3c', 14, 7, 350);
+      p3.echoes.splice(i, 1);
+      continue;
+    }
+    if (e.dist >= ECHO_MAX_DIST || e.x < bounds.minX || e.x > bounds.maxX || e.y < bounds.minY || e.y > bounds.maxY) {
+      p3.barrageHit = true; // one slipped through: no shatter bonus
+      p3.echoes.splice(i, 1);
+    }
+  }
+}
+
 export function spawnMeteor(p3: Phase3State, x: number, y: number, dmg: number, dps: number) {
   p3.meteors.push({ id: Math.random().toString(), x, y, t: 0, fallMs: METEOR_FALL_MS, dmg, dps });
 }
@@ -324,6 +427,17 @@ export function updatePhase3(
   fx: Phase3Fx
 ) {
   updateClones(p3, boss, player, tank, dt, now, bounds, fx);
+  updateEchoes(p3, boss, player, tank, dt, bounds, fx);
+  if (boss.splitActive && !boss.splitDizzy && boss.state === 'chasing' && p3.echoes.length === 0) {
+    if (p3.barrageAt === undefined) p3.barrageAt = now + 5000;
+    if (now >= p3.barrageAt) {
+      spawnMirrorBarrage(p3, player, bounds, fx);
+      p3.barrageAt = now + BARRAGE_GAP_MS + Math.random() * 3000;
+    }
+  } else if (!boss.splitActive) {
+    p3.barrageAt = undefined;
+    p3.echoes.length = 0;
+  }
   if (boss.splitActive && !boss.splitDizzy && boss.state === 'chasing' && p3.clones.length > 0) {
     if (p3.shuffleAt === undefined) p3.shuffleAt = now + 8000;
     if (now >= p3.shuffleAt) {

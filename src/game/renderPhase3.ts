@@ -112,6 +112,62 @@ export function drawPhase3Ground(ctx: CanvasRenderingContext2D, p3: Phase3State,
   drawCraters(ctx, p3, now);
 }
 
+/** Doctor-Strange-style spell circle: rotating dashed rings + counter-rotating square, orange. */
+function drawSigil(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, now: number, alpha: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = '#ff9a3c';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([7, 6]);
+  ctx.rotate(now / 700);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, TAU);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.rotate(-now / 350);
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.7, 0, TAU);
+  ctx.stroke();
+  const s = r * 0.72;
+  ctx.strokeRect(-s / 1.414, -s / 1.414, s * 1.414, s * 1.414);
+  ctx.rotate(Math.PI / 4);
+  ctx.strokeRect(-s / 1.414, -s / 1.414, s * 1.414, s * 1.414);
+  ctx.restore();
+}
+
+function drawEchoes(ctx: CanvasRenderingContext2D, p3: Phase3State, boss: Boss | null, now: number) {
+  for (const e of p3.echoes) {
+    const tele = e.state === 'telegraph';
+    drawSigil(ctx, e.x, e.y, e.r + 22, now, tele ? 0.9 : 0.4);
+    if (tele) {
+      // aim line so the volley direction is readable
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,154,60,0.45)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 8]);
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y);
+      ctx.lineTo(e.x + Math.cos(e.ang) * 170, e.y + Math.sin(e.ang) * 170);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    const drawn = boss
+      ? drawBossSprite(ctx, boss.skin.key, e.ang, 'walk', now, e.r * 3.4, { alpha: tele ? 0.55 : 0.8, extraFilter: 'hue-rotate(-25deg) saturate(1.5) brightness(1.15)' })
+      : false;
+    if (!drawn) {
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = '#ff9a3c';
+      ctx.beginPath();
+      ctx.arc(0, 0, e.r, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
 function drawRusherLane(ctx: CanvasRenderingContext2D, c: BossClone, now: number) {
   if (c.act !== 'windup') return;
   const a = c.actAng || 0;
@@ -127,8 +183,10 @@ function drawRusherLane(ctx: CanvasRenderingContext2D, c: BossClone, now: number
   ctx.restore();
 }
 
-export function drawClones(ctx: CanvasRenderingContext2D, p3: Phase3State, now: number) {
+export function drawClones(ctx: CanvasRenderingContext2D, p3: Phase3State, now: number, boss: Boss | null = null) {
+  drawEchoes(ctx, p3, boss, now);
   for (const c of p3.clones) {
+    if (c.state !== 'absorbing') drawSigil(ctx, c.x, c.y + c.r * 0.6, c.r + 26, now, 0.6 * c.alpha);
     drawRusherLane(ctx, c, now);
     ctx.save();
     ctx.translate(c.x, c.y);

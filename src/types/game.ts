@@ -318,8 +318,26 @@ export interface Crater {
   dps: number;
 }
 
+/** Mirror-dimension echo (Doctor Strange style): fragile copy that dashes at the player in sync with others. */
+export interface BossEcho {
+  id: string;
+  x: number;
+  y: number;
+  r: number;
+  ang: number;
+  state: 'telegraph' | 'dash';
+  t: number;      // ms in current state
+  delay: number;  // extra ms before it launches (staggers the volley)
+  dist: number;   // distance dashed so far
+}
+
 export interface Phase3State {
   shuffleAt?: number;
+  barrageAt?: number;
+  echoes: BossEcho[];
+  barrageTotal?: number;
+  barrageShattered?: number;
+  barrageHit?: boolean;
   clones: BossClone[];
   meteors: Meteor[];
   craters: Crater[];

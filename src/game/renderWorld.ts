@@ -1313,7 +1313,7 @@ export function renderGameScene(
   }
 
   // Phase 3 phantom clones
-  if (phase3) drawClones(ctx, phase3, performance.now());
+  if (phase3) drawClones(ctx, phase3, performance.now(), boss ?? null);
 
   // Player OR Tank
   if (tank.mounted) {
