@@ -112,82 +112,8 @@ export function drawPhase3Ground(ctx: CanvasRenderingContext2D, p3: Phase3State,
   drawCraters(ctx, p3, now);
 }
 
-/** Doctor-Strange-style spell circle: rotating dashed rings + counter-rotating square, orange. */
-function drawSigil(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, now: number, alpha: number) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.globalAlpha = alpha;
-  ctx.strokeStyle = '#ff9a3c';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([7, 6]);
-  ctx.rotate(now / 700);
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, TAU);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.rotate(-now / 350);
-  ctx.beginPath();
-  ctx.arc(0, 0, r * 0.7, 0, TAU);
-  ctx.stroke();
-  const s = r * 0.72;
-  ctx.strokeRect(-s / 1.414, -s / 1.414, s * 1.414, s * 1.414);
-  ctx.rotate(Math.PI / 4);
-  ctx.strokeRect(-s / 1.414, -s / 1.414, s * 1.414, s * 1.414);
-  ctx.restore();
-}
-
-function drawEchoes(ctx: CanvasRenderingContext2D, p3: Phase3State, boss: Boss | null, now: number) {
-  for (const e of p3.echoes) {
-    const tele = e.state === 'telegraph';
-    drawSigil(ctx, e.x, e.y, e.r + 22, now, tele ? 0.9 : 0.4);
-    if (tele) {
-      // aim line so the volley direction is readable
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255,154,60,0.45)';
-      ctx.lineWidth = 3;
-      ctx.setLineDash([10, 8]);
-      ctx.beginPath();
-      ctx.moveTo(e.x, e.y);
-      ctx.lineTo(e.x + Math.cos(e.ang) * 170, e.y + Math.sin(e.ang) * 170);
-      ctx.stroke();
-      ctx.restore();
-    }
-    ctx.save();
-    ctx.translate(e.x, e.y);
-    const drawn = boss
-      ? drawBossSprite(ctx, boss.skin.key, e.ang, 'walk', now, e.r * 3.4, { alpha: tele ? 0.55 : 0.8, extraFilter: 'hue-rotate(-25deg) saturate(1.5) brightness(1.15)' })
-      : false;
-    if (!drawn) {
-      ctx.globalAlpha = 0.7;
-      ctx.fillStyle = '#ff9a3c';
-      ctx.beginPath();
-      ctx.arc(0, 0, e.r, 0, TAU);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-}
-
-function drawRusherLane(ctx: CanvasRenderingContext2D, c: BossClone, now: number) {
-  if (c.act !== 'windup') return;
-  const a = c.actAng || 0;
-  ctx.save();
-  ctx.strokeStyle = `rgba(201, 201, 255, ${0.5 + 0.4 * Math.sin(now / 50)})`;
-  ctx.lineWidth = c.r * 1.2;
-  ctx.globalAlpha = 0.35;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(c.x, c.y);
-  ctx.lineTo(c.x + Math.cos(a) * 300, c.y + Math.sin(a) * 300);
-  ctx.stroke();
-  ctx.restore();
-}
-
-export function drawClones(ctx: CanvasRenderingContext2D, p3: Phase3State, now: number, boss: Boss | null = null) {
-  drawEchoes(ctx, p3, boss, now);
+export function drawClones(ctx: CanvasRenderingContext2D, p3: Phase3State, now: number) {
   for (const c of p3.clones) {
-    if (c.state !== 'absorbing') drawSigil(ctx, c.x, c.y + c.r * 0.6, c.r + 26, now, 0.6 * c.alpha);
-    drawRusherLane(ctx, c, now);
     ctx.save();
     ctx.translate(c.x, c.y);
     ctx.globalAlpha = 0.28 * c.alpha;
@@ -332,48 +258,6 @@ export function drawThrowAim(ctx: CanvasRenderingContext2D, boss: Boss, now: num
 
 /** Missile / thrown weapon. Returns true if drawn (caller skips the default orb art). */
 export function drawSpecialOrb(ctx: CanvasRenderingContext2D, o: BossOrb, now: number): boolean {
-  if (o.kind === 'charge' || o.kind === 'void') {
-    // Purple void orb: swells while charging over the boss's head, then flies at the player
-    const pulse = 1 + Math.sin(now / 90) * 0.08;
-    const r = o.r * pulse;
-    ctx.save();
-    ctx.translate(o.x, o.y);
-    ctx.shadowColor = '#c77dff';
-    ctx.shadowBlur = 26;
-    const g = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
-    g.addColorStop(0, '#f3d9ff');
-    g.addColorStop(0.45, '#b04dff');
-    g.addColorStop(1, 'rgba(70, 10, 120, 0.9)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, TAU);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(230, 180, 255, 0.8)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 8]);
-    ctx.rotate(now / 300);
-    ctx.beginPath();
-    ctx.arc(0, 0, r + 8, 0, TAU);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-    if (o.hp < o.hpMax || o.kind === 'charge') {
-      ctx.fillStyle = 'rgba(0,0,0,0.65)';
-      ctx.fillRect(o.x - 26, o.y - r - 18, 52, 6);
-      ctx.fillStyle = '#c77dff';
-      ctx.fillRect(o.x - 26, o.y - r - 18, 52 * Math.max(0, o.hp / o.hpMax), 6);
-    }
-    if (o.kind === 'charge') {
-      ctx.save();
-      ctx.font = 'bold 13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#f3d9ff';
-      ctx.fillText('SHOOT IT!', o.x, o.y - r - 26);
-      ctx.restore();
-    }
-    return true;
-  }
   if (o.kind === 'missile') {
     const ang = Math.atan2(o.vy, o.vx);
     ctx.save();
@@ -499,35 +383,6 @@ export function drawBossMeleeFx(ctx: CanvasRenderingContext2D, boss: Boss, playe
     }
     ctx.fill();
     ctx.stroke();
-    ctx.restore();
-
-    // Button prompt: which key answers this swing
-    const unparryable = step.arc >= TAU;
-    const keys = unparryable ? [['SHIFT', 'DODGE!', '#ff6b6b']] : [['X', 'PARRY', '#ffd166'], ['SHIFT', 'DODGE', '#83d3e1']];
-    ctx.save();
-    ctx.font = 'bold 13px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const blink = prog > 0.55 ? 1 : 0.65; // brightens near the moment to react
-    ctx.globalAlpha = blink;
-    let px = boss.x - ((keys.length - 1) * 62) / 2;
-    const py = boss.y - boss.r - 46 - boss.height;
-    for (const [key, label, color] of keys) {
-      const w = key === 'SHIFT' ? 52 : 28;
-      ctx.fillStyle = 'rgba(15,15,25,0.85)';
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(px - w / 2, py - 12, w, 24, 6);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = color;
-      ctx.fillText(key, px, py);
-      ctx.font = 'bold 10px sans-serif';
-      ctx.fillText(label, px, py + 22);
-      ctx.font = 'bold 13px sans-serif';
-      px += 62;
-    }
     ctx.restore();
   }
 }

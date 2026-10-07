@@ -49,7 +49,6 @@ import {
   playAlertStinger,
   playUpgradeSound,
   playPlayerHurtSound,
-  playTowerHitSound,
   startBgmMusic,
   stopBgmMusic,
   unlockAudio,
@@ -59,11 +58,6 @@ import { updateTowersAndClimbing } from './game/towerLogic';
 import { updateBossAI, shatterPhantomDecoy } from './game/bossLogic';
 import { stepKnockback, applyKnockback } from './game/knockback';
 import AdminPanel from './components/AdminPanel';
-import {
-  addPosture, addMomentum, tickCombat, tryStartParry, classifyIncomingHit, momentumDamageMul,
-  isStaggered, PERFECT_DODGE_BONUS_MS,
-} from './game/combat';
-import { shatterEcho, shatterEchoesNear } from './game/bossPhase3';
 import { createPhase3State, resetPhase3, updatePhase3, damageSplitBody, steerMissile, wipeOldSummons, updateThrownWeapon } from './game/bossPhase3';
 import { renderGameScene } from './game/renderWorld';
 import { preloadAllSprites } from './game/sprites';
@@ -609,13 +603,12 @@ export default function App() {
       // well no matter what the boss was doing; now positioning + timing
       // actually matter: tank a committed attack and it barely dents them,
       // dodge it clean and the recovery window afterward is wide open.
-      const isRecovering = isStaggered(boss, performance.now()) || boss.state === 'chargeRecover' || boss.state === 'tripped' ||
+      const isRecovering = boss.state === 'chargeRecover' || boss.state === 'tripped' ||
         boss.state === 'despRecover' || boss.state === 'comboRecover' ||
         (boss.state === 'landing' && (boss.height || 0) <= 0);
       const isCommitted = boss.state === 'charging' || boss.state === 'spinning' ||
         boss.state === 'laserSweep' || boss.state === 'solarBeam' || boss.state === 'airborne' ||
         boss.state === 'despStrike';
-      if (boss.state === 'orbCharge') dmgMultiplier *= 0.25;
       if (isRecovering) {
         dmgMultiplier *= 1.6;
         if (Math.random() < 0.35) spawnFloatingText(boss.x, boss.y - boss.r - 40, 'PUNISH!', '#7ee787', 15);
@@ -624,27 +617,9 @@ export default function App() {
       }
     }
 
-    if ('skin' in ent) dmgMultiplier *= momentumDamageMul(engineRef.current.player);
     const dmg = rawDmg * dmgMultiplier;
     ent.hp -= dmg;
     (ent as any).lastHit = performance.now();
-
-    // Posture + momentum: melee/heavy hits break posture fastest; a fresh perfect dodge doubles it
-    if ('skin' in ent) {
-      const nowH = performance.now();
-      const pl = engineRef.current.player;
-      let posture = rawDmg * (isRanged === false ? 0.35 : 0.12);
-      if (nowH < (pl.perfectDodgeUntil ?? 0)) {
-        posture *= 2;
-        if (isRanged === false && nowH - ((pl as any).lastShadowStrike || 0) > 1500) {
-          (pl as any).lastShadowStrike = nowH;
-          spawnFloatingText(pl.x, pl.y - 70, '⚔️ SHADOW STRIKE!', '#83d3e1', 24);
-        }
-      }
-      posture *= 1 + ((pl.momentum ?? 0) / 100) * 0.5;
-      addPosture(ent as Boss, posture, nowH, { text: spawnFloatingText, shake: addScreenShake, burst: createParticles });
-      addMomentum(pl, isRanged === false ? 3 : 0.8, nowH);
-    }
 
     const vampiric = sp.vampiric_strikes;
     if (vampiric && vampiric.unlocked && vampiric.equipped) {
@@ -717,9 +692,6 @@ export default function App() {
       for (const c of engineRef.current.phase3.clones) if (c.state !== 'absorbing') targets.push(c);
     }
 
-    if (engineRef.current.phase3.echoes.length) {
-      shatterEchoesNear(engineRef.current.phase3, engineRef.current.boss, x, y, radius, { spawnFloater: spawnFloatingText, createParticles, addScreenShake });
-    }
     for (const t of targets) {
       const dist = Math.hypot(t.x - x, t.y - y);
       if (dist < radius + t.r) {
@@ -851,7 +823,7 @@ export default function App() {
       r: 42,
       hp: Math.round(1800 * hpMul),
       hpMax: Math.round(1800 * hpMul),
-      baseSpeed: 3.0,
+      baseSpeed: 2.3,
       color: skin.color,
       dead: false,
       state: 'entering',
@@ -875,63 +847,18 @@ export default function App() {
     spawnFloatingText(player.x, player.y - 100, `⚠️ BOSS: ${skin.name}`, '#ff4d5e', 24);
   }, [createParticles, showAlert, spawnFloatingText]);
 
-  const applyPlayerDamage = useCallback((dmg: number, isRanged = false, unparryable = false) => {
+  const applyPlayerDamage = useCallback((dmg: number, isRanged = false) => {
     const player = engineRef.current.player;
     if (player.hp <= 0) return;
+    if (godModeRef.current) return; // admin god mode
 
     // If inside base safe sanctuary, Divine Aegis, or mid-dash, player takes 0 damage
     if (isEntityInsideBase(player.x, player.y, engineRef.current.base)) return;
     const aegis = engineRef.current.superpowers.divine_aegis;
     if (aegis && aegis.activeUntil > performance.now()) return;
-    if (godModeRef.current) return; // admin god mode
-    const nowT = performance.now();
-    const eng0 = engineRef.current;
-    let defense = classifyIncomingHit(player, dmg, nowT);
-    if (unparryable && (defense.kind === 'parry' || defense.kind === 'lateBlock')) defense = { kind: 'none' }; // SMASH: dodge it
-    if (defense.kind === 'parry') {
-      // Perfect parry: negate the hit, break the boss's posture, reward momentum
-      player.parryUntil = 0;
-      player.parryCdUntil = nowT + 150; // successful parry refunds the cooldown
-      spawnFloatingText(player.x, player.y - 55, 'PARRY!', '#ffd166', 26);
-      createParticles(player.x, player.y, '#ffb703', 22, 9, 380);
-      addScreenShake(14);
-      playTowerHitSound();
-      addMomentum(player, 25, nowT);
-      if (player.hp < player.hpMax * 0.35) {
-        player.hp = Math.min(player.hpMax, player.hp + player.hpMax * 0.1);
-        spawnFloatingText(player.x, player.y - 90, '🔥 EPIC COMEBACK! 🔥', '#ff9f1c', 32);
-        addScreenShake(20);
-      }
-      if (eng0.boss && !eng0.boss.dead) {
-        const near = Math.hypot(eng0.boss.x - player.x, eng0.boss.y - player.y) < eng0.boss.r + 420;
-        addPosture(eng0.boss, near ? (isRanged ? 20 : 45) : 15, nowT, { text: spawnFloatingText, shake: addScreenShake, burst: createParticles });
-      }
-      return;
-    }
-    if (nowT < player.dashLockedUntil) {
-      if (defense.kind === 'perfectDodge' && (player.perfectDodgeUntil ?? 0) < nowT) {
-        // Dashed through a heavy hit at the last moment
-        player.perfectDodgeUntil = nowT + PERFECT_DODGE_BONUS_MS;
-        player.dashLock = 0; // instant dash refill so you can chase / re-dodge
-        spawnFloatingText(player.x, player.y - 55, 'PERFECT DODGE!', '#83d3e1', 24);
-        if (player.hp < player.hpMax * 0.35) {
-          player.hp = Math.min(player.hpMax, player.hp + player.hpMax * 0.1);
-          spawnFloatingText(player.x, player.y - 95, '🔥 EPIC COMEBACK! 🔥', '#ff9f1c', 32);
-          addScreenShake(20);
-        }
-        createParticles(player.x, player.y, '#83d3e1', 18, 8, 320);
-        addScreenShake(6);
-        addMomentum(player, 20, nowT);
-      }
-      return;
-    }
+    if (performance.now() < player.dashLockedUntil) return;
 
     let finalDmg = dmg;
-    if (defense.kind === 'lateBlock') {
-      finalDmg *= 0.5;
-      spawnFloatingText(player.x, player.y - 55, 'BLOCK', '#c0c0c0', 16);
-    }
-    if (dmg >= 15) addMomentum(player, -30, nowT); // taking a real hit bleeds momentum
     if (player.inCoverId && isRanged) {
       finalDmg *= 0.4; // 60% cover damage reduction
     }
@@ -1007,7 +934,7 @@ export default function App() {
         return next;
       });
     }
-  }, [flashVignette, spawnFloatingText, addScreenShake, showAlert, saveProgress, clearSavedProgress, createParticles]);
+  }, [flashVignette, spawnFloatingText, addScreenShake, showAlert, saveProgress, clearSavedProgress]);
 
   const handleToggleEquipSkill = useCallback((id: string) => {
     const res = toggleEquipPowerStand(engineRef.current.superpowers, id);
@@ -1060,9 +987,6 @@ export default function App() {
       for (const c of engineRef.current.phase3.clones) if (c.state !== 'absorbing') targets.push(c);
     }
 
-    if (engineRef.current.phase3.echoes.length) {
-      shatterEchoesNear(engineRef.current.phase3, engineRef.current.boss, player.x + Math.cos(ang) * range * 0.6, player.y + Math.sin(ang) * range * 0.6, range * 0.7, { spawnFloater: spawnFloatingText, createParticles, addScreenShake });
-    }
     for (const ent of targets) {
       const dist = Math.hypot(ent.x - player.x, ent.y - player.y);
       if (dist < range + ent.r) {
@@ -1100,6 +1024,35 @@ export default function App() {
   }, [damageEntity, spawnFloatingText, createParticles, addScreenShake]);
 
   // Ground Slam — a boss-style AOE smash, part of base kit (not skill-gated)
+  // [C] during a boss fight: Shadow Step — blink behind the boss (brief invulnerability), then shoot.
+  const performShadowStep = useCallback((): boolean => {
+    const eng = engineRef.current;
+    const boss = eng.boss;
+    const p = eng.player;
+    if (!boss || boss.dead || boss.state === 'entering' || eng.tank.mounted || p.hp <= 0) return false;
+    const now = performance.now();
+    const last = (p as any).shadowStepAt || 0;
+    if (now - last < 3500) {
+      spawnFloatingText(p.x, p.y - 40, `Shadow Step (${Math.ceil((3500 - (now - last)) / 1000)}s)`, '#9aa4c7', 12);
+      return true; // consumed: don't fall through to the ground slam
+    }
+    (p as any).shadowStepAt = now;
+    const arenaDoor = eng.currentArenaId ? eng.doors[eng.currentArenaId - 1] : null;
+    const b = arenaDoor
+      ? { minX: arenaDoor.arenaX - arenaDoor.arenaW / 2 + 60, maxX: arenaDoor.arenaX + arenaDoor.arenaW / 2 - 60, minY: arenaDoor.arenaY - arenaDoor.arenaH / 2 + 60, maxY: arenaDoor.arenaY + arenaDoor.arenaH / 2 - 60 }
+      : { minX: 100, maxX: WORLD_W - 100, minY: 100, maxY: WORLD_H - 100 };
+    const dist = boss.r + p.r + 90;
+    createParticles(p.x, p.y, '#6c7bff', 18, 7, 350);
+    p.x = Math.max(b.minX, Math.min(b.maxX, boss.x - Math.cos(boss.facingAng) * dist));
+    p.y = Math.max(b.minY, Math.min(b.maxY, boss.y - Math.sin(boss.facingAng) * dist));
+    p.dashLockedUntil = now + 350; // brief invulnerability while you blink
+    (p as any).kbVx = 0;
+    (p as any).kbVy = 0;
+    createParticles(p.x, p.y, '#6c7bff', 18, 7, 350);
+    spawnFloatingText(p.x, p.y - 40, 'SHADOW STEP', '#8fa0ff', 18);
+    return true;
+  }, [createParticles, spawnFloatingText]);
+
   const performGroundSlam = useCallback(() => {
     const player = engineRef.current.player;
     if (isEntityInsideBase(player.x, player.y, engineRef.current.base)) {
@@ -1141,19 +1094,10 @@ export default function App() {
       targets.push(eng.boss);
       for (const c of eng.phase3.clones) if (c.state !== 'absorbing') targets.push(c);
     }
-    if (eng.phase3.echoes.length) {
-      shatterEchoesNear(eng.phase3, eng.boss, player.x, player.y, RADIUS, { spawnFloater: spawnFloatingText, createParticles, addScreenShake });
-    }
     for (const ent of targets) {
       const d = Math.hypot(ent.x - player.x, ent.y - player.y);
       if (d < RADIUS + ent.r) {
         damageEntity(ent, DMG);
-        if ('skin' in ent) {
-          // Slam is the "engage" tool: big posture hit on the boss, bonus if it's right on top of you
-          addPosture(ent as Boss, d < 120 ? 40 : 26, now, { text: spawnFloatingText, shake: addScreenShake, burst: createParticles });
-          addMomentum(player, 10, now);
-          spawnFloatingText(ent.x, ent.y - ent.r - 30, 'ENGAGED!', '#ffb703', 18);
-        }
         const a = Math.atan2(ent.y - player.y, ent.x - player.x);
         ent.x += Math.cos(a) * 60;
         ent.y += Math.sin(a) * 60;
@@ -1396,7 +1340,7 @@ export default function App() {
       r: 44,
       hp: Math.round(2500 * hpMul),
       hpMax: Math.round(2500 * hpMul),
-      baseSpeed: 3.3,
+      baseSpeed: 2.5,
       color: skin.color,
       dead: false,
       state: 'entering',
@@ -1748,7 +1692,6 @@ export default function App() {
     showAlert(`🏰 BASE UPGRADED TO LEVEL ${base.level}`);
   }, [showAlert, spawnFloatingText, syncShopState]);
 
-
   // ---------------- Admin / test tools ----------------
   const adminStartBoss = useCallback((n: number) => {
     const eng = engineRef.current;
@@ -1919,13 +1862,8 @@ export default function App() {
       if (e.key === 'e' || e.key === 'E') useConsumable();
       if (e.key === 'f' || e.key === 'F') toggleTank();
       if (e.key === 'r' || e.key === 'R') tryDoorInteract();
-      if (e.key === 'c' || e.key === 'C') performGroundSlam();
-      // Parry / Counter [X] — time it just before a heavy hit lands
-      if ((e.key === 'x' || e.key === 'X') && !e.repeat) {
-        const eng = engineRef.current;
-        if (!eng.tank.mounted && tryStartParry(eng.player, performance.now())) {
-          createParticles(eng.player.x, eng.player.y, '#ffd166', 6, 4, 180);
-        }
+      if (e.key === 'c' || e.key === 'C') {
+        if (!performShadowStep()) performGroundSlam();
       }
 
       // Dash / Dodge [Shift] — short i-frame burst on a cooldown
@@ -1955,7 +1893,6 @@ export default function App() {
           p.dashVx = dx * DASH_SPEED;
           p.dashVy = dy * DASH_SPEED;
           p.dashLockedUntil = now + DASH_DURATION;
-          p.lastDashAt = now;
           p.dashLock = now + DASH_COOLDOWN;
           spawnFloatingText(p.x, p.y - 30, 'DASH!', '#83d3e1', 14);
           createParticles(p.x, p.y, '#83d3e1', 10, 6, 260);
@@ -2051,7 +1988,6 @@ export default function App() {
 
         // Minecraft-style knockback slide (boss hits set kbVx/kbVy; clamped to bounds just below)
         stepKnockback(player, dt);
-        tickCombat(player, eng.boss, nowTs, dt);
 
         if (tank.mounted) {
           tank.x = player.x;
@@ -2443,7 +2379,7 @@ export default function App() {
               spawnFloatingText(player.x, player.y - 70, `☠ ${wiped} OLD SUMMON${wiped > 1 ? 'S' : ''} DESTROYED`, '#b98bff', 16);
             }
           }
-        } else if (eng.phase3.clones.length || eng.phase3.echoes.length || eng.phase3.meteors.length || eng.phase3.craters.length) {
+        } else if (eng.phase3.clones.length || eng.phase3.meteors.length || eng.phase3.craters.length) {
           resetPhase3(eng.phase3);
         }
 
@@ -2535,21 +2471,7 @@ export default function App() {
           // Player / Turret / Soldier Bullet hitting Boss or Zombies or Elite Guards
           if (b.cls !== 'zombiebullet' && b.cls !== 'zfireball' && b.cls !== 'elitebullet') {
             let hit = false;
-            // Void orb over the boss's head takes priority over the boss body
-            for (let oi = eng.bossOrbs.length - 1; oi >= 0 && !hit; oi--) {
-              const co = eng.bossOrbs[oi];
-              if (co.kind !== 'charge') continue;
-              if (distToSegment(co.x, co.y, prevX, prevY, b.x, b.y) < co.r + 10) {
-                co.hp -= b.dmg;
-                createParticles(co.x, co.y, '#c77dff', 6, 6);
-                if (co.hp <= 0) {
-                  createParticles(co.x, co.y, '#c77dff', 36, 11, 500);
-                  eng.bossOrbs.splice(oi, 1);
-                }
-                hit = true;
-              }
-            }
-            if (!hit && !b.noBossDamage && eng.boss && eng.boss.state !== 'entering') {
+            if (!b.noBossDamage && eng.boss && eng.boss.state !== 'entering') {
               const dBoss = distToSegment(eng.boss.x, eng.boss.y, prevX, prevY, b.x, b.y);
               if (dBoss < eng.boss.r + 8) {
                 if (b.splash) {
@@ -2572,18 +2494,6 @@ export default function App() {
                 if (dDecoy < boss.r + 8) {
                   shatterPhantomDecoy(boss, di, createParticles, spawnFloatingText, addScreenShake);
                   hit = true;
-                  break;
-                }
-              }
-            }
-
-            // Bullet hitting a mirror-dimension echo — one hit shatters it
-            if (!hit && eng.phase3.echoes.length) {
-              for (let ei = eng.phase3.echoes.length - 1; ei >= 0; ei--) {
-                const echo = eng.phase3.echoes[ei];
-                if (distToSegment(echo.x, echo.y, prevX, prevY, b.x, b.y) < echo.r + 8) {
-                  shatterEcho(eng.phase3, eng.boss, ei, { spawnFloater: spawnFloatingText, createParticles, addScreenShake });
-                  hit = !b.splash ? true : hit;
                   break;
                 }
               }
@@ -2692,12 +2602,6 @@ export default function App() {
         // Update Boss Orbs — big slow dodgeable projectiles
         for (let i = eng.bossOrbs.length - 1; i >= 0; i--) {
           const orb = eng.bossOrbs[i];
-          if (orb.kind === 'charge') {
-            // Held over the boss's head by the boss AI; harmless until launched
-            orb.life -= dt;
-            if (orb.life <= 0) eng.bossOrbs.splice(i, 1);
-            continue;
-          }
           if (orb.kind === 'missile') steerMissile(orb, player.x, player.y);
           else if (orb.kind === 'throw') {
             if (updateThrownWeapon(orb, eng.boss, dt) === 'caught') {
@@ -2717,7 +2621,7 @@ export default function App() {
             applyPlayerDamage(orb.dmg);
             flashVignette();
             applyKnockback(player, orb.x, orb.y, performance.now());
-            spawnFloatingText(player.x, player.y - 40, `-${orb.dmg} ${orb.kind === 'throw' ? 'WEAPON HIT!' : orb.kind === 'missile' ? 'MISSILE HIT!' : 'ORB HIT!'}`, orb.kind === 'void' ? '#c77dff' : '#ffd166', 22);
+            spawnFloatingText(player.x, player.y - 40, `-${orb.dmg} ${orb.kind === 'throw' ? 'WEAPON HIT!' : orb.kind === 'missile' ? 'MISSILE HIT!' : 'ORB HIT!'}`, '#ffd166', 22);
             createParticles(orb.x, orb.y, '#ffd166', 26, 9, 400);
             addScreenShake(14);
             eng.bossOrbs.splice(i, 1);
@@ -3197,38 +3101,17 @@ export default function App() {
         />
       )}
 
-      {gameState === 'playing' && hudState.hasBoss && (() => {
-        const tag = hudState.bossAttackTag;
-        const tips: [string, string][] = [
-          ['C', 'GROUND SLAM — dive in, slam it and break its posture!'],
-          ['SHIFT', 'Dash THROUGH an attack at the last moment for a PERFECT DODGE'],
-          ['X', 'PARRY right before the hit lands — then counter!'],
-          ['C', 'Chase it down — staying close breaks posture faster'],
-        ];
-        let hint: [string, string];
-        if (tag === 'ORBCHARGE') hint = ['🔮', 'SHOOT THE PURPLE ORB before it fires!'];
-        else if (tag === 'DIZZY') hint = ['C', 'POSTURE BROKEN — slam it and unload everything!'];
-        else if (tag === 'COMBOWINDUP') hint = ['SHIFT', 'Dash through the swing · X parries (the SMASH can\'t be parried)'];
-        else if (tag === 'CHARGEWINDUP' || tag === 'CHARGING') hint = ['SHIFT', 'Dash sideways through the red lane at the last second'];
-        else if (tag === 'SPLITCAST' || (engineRef.current.boss?.splitActive)) hint = ['👥', 'MIRROR DIMENSION — shatter the echoes, break every body!'];
-        else hint = tips[Math.floor(Date.now() / 6000) % tips.length];
-        return (
-          <div
-            style={{
-              position: 'fixed', left: '50%', bottom: 120, transform: 'translateX(-50%)',
-              zIndex: 40, pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 10,
-              background: 'rgba(10,12,22,0.78)', border: '1px solid rgba(255,209,102,0.5)',
-              borderRadius: 10, padding: '8px 14px', color: '#f5f1e6', fontWeight: 700, fontSize: 15,
-              textShadow: '0 1px 2px #000', whiteSpace: 'nowrap',
-            }}
-          >
-            <span style={{ background: '#ffd166', color: '#1a1405', borderRadius: 6, padding: '2px 8px', fontWeight: 900 }}>
-              {hint[0] === 'C' || hint[0] === 'X' || hint[0] === 'SHIFT' ? `PRESS ${hint[0]}` : hint[0]}
-            </span>
-            <span>{hint[1]}</span>
-          </div>
-        );
-      })()}
+      {gameState === 'playing' && hudState.hasBoss && (
+        <div
+          style={{
+            position: 'fixed', left: '50%', bottom: 96, transform: 'translateX(-50%)',
+            zIndex: 40, pointerEvents: 'none', color: 'rgba(255,255,255,0.8)',
+            fontWeight: 700, fontSize: 14, letterSpacing: 1, textShadow: '0 1px 3px #000',
+          }}
+        >
+          Press C — go behind the boss and shoot
+        </div>
+      )}
 
       {gameState === 'playing' && (
         <AdminPanel

@@ -30,8 +30,8 @@ export const JUMPSCARE_INTERVAL_ENRAGED_MS = 14000;
 export const BOSS_SUPER_DMG_MUL = 1.2;
 
 // ---- Bull charge ("ramp") ----
-export const CHARGE_WINDUP_MS = 550;   // red lane is visible for just 0.4s before it fires
-export const CHARGE_DASH_MS = 950;     // ...then the boss is DRAGGED along the lane over this long (a visible slide, not a teleport)
+export const CHARGE_WINDUP_MS = 650;   // red lane is visible for just 0.4s before it fires
+export const CHARGE_DASH_MS = 1100;     // ...then the boss is DRAGGED along the lane over this long (a visible slide, not a teleport)
 export const CHARGE_RECOVER_MS = 1000; // boss stands completely still for 1s afterwards
 // Minecraft-style knockback: an instant impulse away from the attacker that slides to a stop.
 export const RAM_KNOCKBACK_UNITS = 30; // boss charge: player is thrown this far along the charge direction
@@ -39,10 +39,10 @@ export const KNOCKBACK_UNITS = 46;     // total distance the player is thrown
 export const KNOCKBACK_TAU_MS = 110;   // how quickly the slide decays (~95% of it done in 0.33s)
 
 // ---- Phase 3: Phantom Split, final stand ----
-export const SPLIT_STAT_MUL = 0.5;        // every body deals half damage while split
-export const SPLIT_CLONE_COUNT = 2;       // + the real boss = 3 bodies
-export const SPLIT_BREAK_FRACTION = 1 / 6; // each body goes dizzy after 1/6 of the phase-3 pool (150 of 900)
-export const CLONE_STRIKE_DMG = 40;
+export const SPLIT_STAT_MUL = 0.85;       // every body deals half damage while split
+export const SPLIT_CLONE_COUNT = 3;       // + the real boss = 4 bodies
+export const SPLIT_BREAK_FRACTION = 1 / 8; // each body goes dizzy after 1/6 of the phase-3 pool (150 of 900)
+export const CLONE_STRIKE_DMG = 60;
 export const MISSILE_SPEED_MUL = 2.5;     // yellow orb becomes a homing missile at 2.5x orb speed
 export const MISSILE_MAX_FIRED = 2;       // only fired twice in the final stand
 export const MISSILE_HP = 90;
@@ -77,13 +77,6 @@ export const PULL_COMBO_WINDUP = 260;
 // ---- God-of-War style melee combo (lunging chain: slash, backhand, heavy smash) ----
 export const COMBO_TRIGGER_RANGE = 120; // edge-to-edge distance at which the boss starts swinging
 export const COMBO_COOLDOWN_MS = 3500;
-// Melee streak -> purple void orb: after this many combos in a row the boss stops, forms an orb
-// over its head, and fires it unless the player shoots it down first.
-export const VOID_ORB_STREAK = 2;
-export const VOID_ORB_CHARGE_MS = 3600;
-export const VOID_ORB_HP = 140;
-export const VOID_ORB_DMG = 60;
-export const VOID_ORB_SPEED = 4.4; // px/frame — player speed is 6.2 and a dash is 27, so it's dodgeable
 export const COMBO_RECOVER_MS = 900;    // punish window after the finisher
 export const COMBO_STEPS = [
   { name: 'SLASH', windup: 380, reach: 105, arc: 1.7, dmg: 34, lunge: 90, knock: 8, shake: 8 },

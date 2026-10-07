@@ -58,13 +58,6 @@ export interface PlayerState {
   dashVx: number;
   dashVy: number;
   dashLockedUntil: number;
-  // Skill-combat layer (see game/combat.ts)
-  lastDashAt?: number;
-  parryUntil?: number;
-  parryCdUntil?: number;
-  momentum?: number;
-  lastMomentumGain?: number;
-  perfectDodgeUntil?: number;
   onBoxId: string | null;
   onTowerId: string | null;
   elevation: number;
@@ -154,7 +147,7 @@ export interface Boss {
   baseSpeed: number;
   color: string;
   dead: boolean;
-  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField' | 'frostWindup' | 'frostBeam' | 'denialWindup' | 'despWindup' | 'despStrike' | 'despRecover' | 'splitCast' | 'dizzy' | 'meteorWindup' | 'meteorShower' | 'throwWindup' | 'pullWindup' | 'pulling' | 'comboWindup' | 'comboRecover' | 'orbCharge';
+  state: 'entering' | 'chasing' | 'anticipate' | 'rising' | 'airborne' | 'landing' | 'chargeWindup' | 'charging' | 'chargeRecover' | 'fireballWindup' | 'teleportOut' | 'phantomTelegraph' | 'teleportStrike' | 'spinWindup' | 'spinning' | 'roar' | 'tripped' | 'laserWindup' | 'laserSweep' | 'summonWindup' | 'solarWindup' | 'solarBeam' | 'pushSlam' | 'spikeField' | 'frostWindup' | 'frostBeam' | 'denialWindup' | 'despWindup' | 'despStrike' | 'despRecover' | 'splitCast' | 'dizzy' | 'meteorWindup' | 'meteorShower' | 'throwWindup' | 'pullWindup' | 'pulling' | 'comboWindup' | 'comboRecover';
   stateTimer: number;
   targetAng: number;
   facingAng: number;
@@ -212,14 +205,6 @@ export interface Boss {
   splitMeter?: number;
   splitMeterMax?: number;
   splitDizzy?: boolean;
-  // Posture / stagger (see game/combat.ts)
-  posture?: number;
-  meleeStreak?: number;      // combos in a row; triggers the void orb
-  chargeOrbId?: string;      // id of the purple orb being charged over the boss's head
-  chargeOrbStart?: number;
-  lastPostureHit?: number;
-  staggerUntil?: number;
-  staggerCount?: number;
   // Final stand ("final hearts"): meteors, thrown weapon, homing missile orb
   finalStand?: boolean;
   finalStandAt?: number;
@@ -267,7 +252,7 @@ export interface BossOrb {
   dmg: number;
   life: number;
   /** 'orb' (default slow straight orb), 'missile' (phase 3 homing), 'throw' (thrown melee weapon). */
-  kind?: 'orb' | 'missile' | 'throw' | 'charge' | 'void';
+  kind?: 'orb' | 'missile' | 'throw';
   speed?: number; // missile cruise speed (px/frame)
   spin?: number;  // thrown weapon rotation
   travelled?: number; // thrown weapon: distance flown outbound
@@ -291,11 +276,6 @@ export interface BossClone {
   atkCd: number;
   meter: number;
   meterMax: number;
-  role?: 'rusher' | 'caster';
-  act?: 'windup' | 'dash';   // sub-action while state === 'chasing'
-  actTimer?: number;
-  actAng?: number;
-  actDist?: number;
 }
 
 export interface Meteor {
@@ -318,26 +298,7 @@ export interface Crater {
   dps: number;
 }
 
-/** Mirror-dimension echo (Doctor Strange style): fragile copy that dashes at the player in sync with others. */
-export interface BossEcho {
-  id: string;
-  x: number;
-  y: number;
-  r: number;
-  ang: number;
-  state: 'telegraph' | 'dash';
-  t: number;      // ms in current state
-  delay: number;  // extra ms before it launches (staggers the volley)
-  dist: number;   // distance dashed so far
-}
-
 export interface Phase3State {
-  shuffleAt?: number;
-  barrageAt?: number;
-  echoes: BossEcho[];
-  barrageTotal?: number;
-  barrageShattered?: number;
-  barrageHit?: boolean;
   clones: BossClone[];
   meteors: Meteor[];
   craters: Crater[];

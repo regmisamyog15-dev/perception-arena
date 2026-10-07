@@ -13,9 +13,8 @@ import {
   BOSS_SUMMON_CAP, RUNNER_WAVE_INTERVAL_MS, RUNNER_WAVE_COUNT, RUNNER_WAVE_HP_MUL,
   JUMPSCARE_INTERVAL_MS, JUMPSCARE_INTERVAL_ENRAGED_MS, BOSS_SUPER_DMG_MUL,
   ORB_INTERVAL_MS, ORB_INTERVAL_ENRAGED_MS, ORB_SPEED, ORB_HP, ORB_DMG_MULT,
-  RAM_KNOCKBACK_UNITS, VOID_ORB_STREAK, VOID_ORB_CHARGE_MS, VOID_ORB_HP, VOID_ORB_DMG, VOID_ORB_SPEED,
+  RAM_KNOCKBACK_UNITS,
 } from './constants';
-import { STAGGER_MS } from './combat';
 import { playExplosionSound, playBossRoarSound, playAlertStinger } from '../audio/sound';
 
 // Small controlled combo table (spec item 4): specific attacks are allowed to
@@ -88,7 +87,7 @@ export function updateBossAI(
   now: number,
   wave: number,
   bounds: { minX: number; maxX: number; minY: number; maxY: number },
-  applyPlayerDamage: (dmg: number, isRanged?: boolean, unparryable?: boolean) => void,
+  applyPlayerDamage: (dmg: number, isRanged?: boolean) => void,
   flashVignette: () => void,
   spawnFloater: (x: number, y: number, text: string, color?: string, size?: number) => void,
   createParticles: (x: number, y: number, color: string, count: number, speedMax: number, lifeMax?: number) => void,
@@ -111,7 +110,7 @@ export function updateBossAI(
     boss.phase = 2;
     boss.enraged = true;
     boss.phaseTransitionUntil = now + 550;
-    boss.baseSpeed *= 1.06;
+    boss.baseSpeed *= 1.04;
     boss.cycleMs = Math.max(1300, boss.cycleMs * 0.82);
     playBossRoarSound();
     playAlertStinger();
@@ -121,7 +120,7 @@ export function updateBossAI(
   } else if (boss.phase === 2 && boss.hp <= boss.hpMax * 0.30) {
     boss.phase = 3;
     boss.phaseTransitionUntil = now + 650;
-    boss.baseSpeed *= 1.06;
+    boss.baseSpeed *= 1.04;
     boss.cycleMs = Math.max(900, boss.cycleMs * 0.78);
     playBossRoarSound();
     playAlertStinger();
@@ -486,7 +485,7 @@ export function updateBossAI(
       boss.stateTimer = boss.cycleMs;
     }
   } else if (boss.state === 'chasing') {
-    const speedMul = (now < boss.roarBoostUntil ? 1.2 : 1) * (boss.enraged ? 1.25 : 1);
+    const speedMul = (now < boss.roarBoostUntil ? 1.15 : 1) * (boss.enraged ? 1.2 : 1);
     const ang = Math.atan2(player.y - boss.y, player.x - boss.x);
     boss.facingAng = ang;
     const dToPlayer = Math.hypot(player.x - boss.x, player.y - boss.y);
@@ -844,9 +843,6 @@ export function updateBossAI(
     }
 
     if ((boss.chargeDistTraveled || 0) >= CHARGE_LANE_LEN - 0.001 || boss.stateTimer <= 0) {
-      if (!tank.mounted && Math.hypot(player.x - boss.x, player.y - boss.y) < boss.r + player.r + 30) {
-        applyKnockbackDir(player, cosA, sinA, RAM_KNOCKBACK_UNITS);
-      }
       boss.state = 'chargeRecover';
       boss.stateTimer = CHARGE_RECOVER_MS; // completely still for 1 second, then it moves again
       createParticles(boss.x, boss.y, '#999', 20, 6);
@@ -1241,7 +1237,7 @@ export function updateBossAI(
       if (!tank.mounted && hd <= boss.r + player.r + step.reach && inCone) {
         const cDmg = Math.round(step.dmg * dmgMul);
         const hp0 = player.hp;
-        applyPlayerDamage(cDmg, false, step.arc >= Math.PI * 2); // the SMASH can't be parried — dodge it
+        applyPlayerDamage(cDmg);
         if (player.hp < hp0) {
           flashVignette();
           applyKnockback(player, boss.x, boss.y, now);
@@ -1256,61 +1252,8 @@ export function updateBossAI(
         boss.comboAng = Math.atan2(player.y - boss.y, player.x - boss.x);
         boss.stateTimer = COMBO_STEPS[boss.comboStep].windup;
       } else {
-        boss.meleeStreak = (boss.meleeStreak || 0) + 1;
-        if (boss.meleeStreak >= VOID_ORB_STREAK && !boss.splitActive) {
-          // Too much melee: the boss stops and gathers a void orb over its head
-          boss.meleeStreak = 0;
-          boss.state = 'orbCharge';
-          boss.stateTimer = VOID_ORB_CHARGE_MS;
-          boss.chargeOrbStart = now;
-          const oid = Math.random().toString();
-          boss.chargeOrbId = oid;
-          bossOrbs.push({
-            id: oid, x: boss.x, y: boss.y - boss.r - 70, vx: 0, vy: 0, r: 14,
-            hp: VOID_ORB_HP, hpMax: VOID_ORB_HP, dmg: Math.round(VOID_ORB_DMG * dmgMul),
-            life: VOID_ORB_CHARGE_MS + 5000, kind: 'charge',
-          });
-          playBossRoarSound();
-          spawnFloater(boss.x, boss.y - boss.r - 130, '🔮 DESTROY THE ORB!', '#c77dff', 24);
-        } else {
-          boss.state = 'comboRecover';
-          boss.stateTimer = COMBO_RECOVER_MS;
-        }
-      }
-    }
-  } else if (boss.state === 'orbCharge') {
-    boss.squash = 0.9 + Math.sin(now / 60) * 0.04;
-    boss.height = 0;
-    const orb = bossOrbs.find((o) => o.id === boss.chargeOrbId);
-    if (!orb) {
-      // Orb was shot down in time: the boss is staggered and wide open
-      boss.chargeOrbId = undefined;
-      boss.staggerUntil = now + STAGGER_MS;
-      boss.posture = 0;
-      boss.state = 'dizzy';
-      boss.stateTimer = STAGGER_MS;
-      addScreenShake(20);
-      spawnFloater(boss.x, boss.y - boss.r - 80, 'ORB BROKEN — STAGGERED!', '#7ee787', 24);
-      createParticles(boss.x, boss.y, '#c77dff', 40, 10, 600);
-    } else {
-      // Orb floats above the head and swells as it charges
-      const prog = 1 - Math.max(0, boss.stateTimer / VOID_ORB_CHARGE_MS);
-      orb.x = boss.x;
-      orb.y = boss.y - boss.r - 70;
-      orb.r = 14 + prog * 30;
-      if (Math.random() < 0.5) createParticles(orb.x + (Math.random() - 0.5) * 80, orb.y + (Math.random() - 0.5) * 80, '#c77dff', 1, 2, 300);
-      if (boss.stateTimer <= 0) {
-        // Too slow: launch it at the player
-        const a = Math.atan2(player.y - orb.y, player.x - orb.x);
-        orb.kind = 'void';
-        orb.vx = Math.cos(a) * VOID_ORB_SPEED;
-        orb.vy = Math.sin(a) * VOID_ORB_SPEED;
-        orb.life = 6000;
-        boss.chargeOrbId = undefined;
         boss.state = 'comboRecover';
         boss.stateTimer = COMBO_RECOVER_MS;
-        addScreenShake(10);
-        spawnFloater(orb.x, orb.y - 30, 'ORB LAUNCHED — DODGE!', '#c77dff', 20);
       }
     }
   } else if (boss.state === 'comboRecover') {
@@ -1334,12 +1277,8 @@ export function updateBossAI(
     boss.height = 0;
     if (Math.random() < 0.35) createParticles(boss.x + (Math.random() - 0.5) * boss.r, boss.y - boss.r * 0.8, '#ffe066', 1, 2, 500);
     if (!boss.splitActive) {
-      // Posture-break stagger keeps the boss down until staggerUntil
-      if (boss.staggerUntil === undefined || now >= boss.staggerUntil) {
-        boss.staggerUntil = undefined;
-        boss.state = 'chasing';
-        boss.stateTimer = boss.cycleMs;
-      }
+      boss.state = 'chasing';
+      boss.stateTimer = boss.cycleMs;
     } else if (boss.splitDizzy && p3.clones.length === 0) {
       // Every clone has been dragged in: the real boss wakes holding the remaining "final hearts".
       boss.splitActive = false;
